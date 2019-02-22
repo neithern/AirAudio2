@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">AirAudio</string>
+    <string name="server_name">服务名称：</string>
+    <string name="server_switch">服务开关：</string>
+</resources>

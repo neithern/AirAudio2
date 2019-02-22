@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">AirAudio</string>
+    <string name="server_name">Server name:</string>
+    <string name="server_switch">Server switch:</string>
+</resources>
