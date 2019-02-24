@@ -76,6 +76,7 @@ public class AirAudioServer implements HardwareAddressMap {
             eni = NetworkInterface.getNetworkInterfaces();
         } catch (Exception e) {
             Log.e(TAG, "Enum net work failed", e);
+            return false;
         }
 
         /* Create AirTunes RTSP server */
@@ -98,10 +99,9 @@ public class AirAudioServer implements HardwareAddressMap {
             rtspPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
             channelGroup.add(channel);
         } catch (Exception e) {
-            Log.e(TAG, "Failed to bind RTSP Bootstrap on port: " + rtspPort, e);
+            Log.e(TAG, "Failed to bind RTSP server on port: " + rtspPort, e);
             return false;
         }
-        Log.d(TAG, "Launched RTSP server on port " + rtspPort);
 
         running = false;
         while (eni.hasMoreElements()) {
@@ -134,9 +134,9 @@ public class AirAudioServer implements HardwareAddressMap {
                     );
                     jmDNS.registerService(serviceInfo);
                     running = true;
-                    Log.d(TAG, "Registered AirTunes server " + serviceInfo.getName() + " on " + addr);
+                    Log.d(TAG, "Registered AirTunes server " + serviceInfo.getName() + " on " + addr + ':' + rtspPort);
                 } catch (Exception e) {
-                    Log.e(TAG, "Register AirTunes server failed on " + addr, e);
+                    Log.e(TAG, "Register AirTunes server failed on " + addr + addr + ':' + rtspPort, e);
                 }
             }
         }
