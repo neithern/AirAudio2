@@ -1,7 +1,7 @@
 package org.phlo.AirReceiver;
 
 import java.net.InetAddress;
+import java.util.concurrent.ConcurrentHashMap;
 
-public interface HardwareAddressMap {
-    byte[] getHardwareAddress(InetAddress address);
+public class HardwareAddressMap extends ConcurrentHashMap<InetAddress, byte[]> {
 }

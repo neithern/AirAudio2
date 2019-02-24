@@ -107,7 +107,7 @@ public class RaopRtspChallengeResponseHandler extends SimpleChannelHandler
 
 		sigData.put(m_challenge);
 		sigData.put(m_localAddress.getAddress());
-		sigData.put(m_hardwareAddressMap.getHardwareAddress(m_localAddress));
+		sigData.put(m_hardwareAddressMap.get(m_localAddress));
 		while (sigData.hasRemaining())
 			sigData.put((byte)0);
 

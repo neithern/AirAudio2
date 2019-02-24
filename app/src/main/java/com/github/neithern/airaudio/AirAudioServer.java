@@ -30,7 +30,7 @@ import java.util.concurrent.Executors;
 import javax.jmdns.JmDNS;
 import javax.jmdns.ServiceInfo;
 
-public class AirAudioServer implements HardwareAddressMap {
+public class AirAudioServer {
     private static final String TAG = "AirAudioServer";
 
     private static final String AIR_TUNES_SERVICE_TYPE = "_raop._tcp.local.";
@@ -60,7 +60,7 @@ public class AirAudioServer implements HardwareAddressMap {
     private boolean running;
     private final ChannelGroup channelGroup = new DefaultChannelGroup();
     private final ArrayList<JmDNS> jmDNSInstances = new ArrayList<>();
-    private final HashMap<InetAddress, byte[]> hardwareAddresses = new HashMap<>();
+    private final HardwareAddressMap hardwareAddresses = new HardwareAddressMap();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final ExecutionHandler executionHandler = new ExecutionHandler(
             new OrderedMemoryAwareThreadPoolExecutor(4, 0, 0)
@@ -70,7 +70,7 @@ public class AirAudioServer implements HardwareAddressMap {
         return running;
     }
 
-    public boolean start(String displayName, int rtspPort) {
+    public boolean start(String displayName, int rtspPort, int audioStream) {
         Enumeration<NetworkInterface> eni = null;
         try {
             eni = NetworkInterface.getNetworkInterfaces();
@@ -80,7 +80,9 @@ public class AirAudioServer implements HardwareAddressMap {
         }
 
         /* Create AirTunes RTSP server */
-        RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(executor, executionHandler, this,
+        RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(
+                audioStream,
+                executor, executionHandler, hardwareAddresses,
                 new SimpleChannelUpstreamHandler() {
                     @Override
                     public void channelOpen (ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
@@ -149,11 +151,6 @@ public class AirAudioServer implements HardwareAddressMap {
         /* Wait for all channels to finish closing */
         allChannelsClosed.awaitUninterruptibly();
         running = false;
-    }
-
-    @Override
-    public byte[] getHardwareAddress(InetAddress address) {
-        return hardwareAddresses.get(address);
     }
 
     private static Map<String, String> map(final String... keyValues) {

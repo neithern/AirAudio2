@@ -177,14 +177,17 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	private Channel m_controlChannel;
 	private Channel m_timingChannel;
 
+	private final int m_audioStream;
+
 	/**
 	 * Creates an instance, using the ExecutorService for the RTP channel's datagram socket factory
 	 * @param rtpExecutorService
 	 * @param executionHandler
 	 */
-	public RaopAudioHandler(final ExecutorService rtpExecutorService, ExecutionHandler executionHandler) {
+	public RaopAudioHandler(final ExecutorService rtpExecutorService, ExecutionHandler executionHandler, int audioStream) {
 		m_rtpExecutorService = rtpExecutorService;
 		m_executionHandler = executionHandler;
+		m_audioStream = audioStream;
 		reset();
 	}
 
@@ -438,7 +441,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 
 		/* Create audio output queue with the format information provided by the ALAC decoder */
 		AudioOutputQueue audioOutputQueue =
-		m_audioOutputQueue = new AudioOutputQueue(m_audioStreamInformationProvider);
+		m_audioOutputQueue = new AudioOutputQueue(m_audioStreamInformationProvider, m_audioStream);
 
 		/* Create timing handle, using the AudioOutputQueue as time source */
 		m_timingHandler = new RaopRtpTimingHandler(audioOutputQueue);

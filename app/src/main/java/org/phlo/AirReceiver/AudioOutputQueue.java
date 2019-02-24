@@ -17,7 +17,6 @@
 
 package org.phlo.AirReceiver;
 
-import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Build;
 
@@ -266,6 +265,8 @@ public class AudioOutputQueue implements AudioClock {
 
 					off += (endLineTime - lineTime) * m_bytesPerFrame;
 					lineTime += endLineTime - lineTime;
+					if (off + len >= samples.length)
+						off = samples.length - len;
 				}
 				else {
 					/* Strange universe... */
@@ -324,7 +325,7 @@ public class AudioOutputQueue implements AudioClock {
 		}
 	}
 
-	AudioOutputQueue(final AudioStreamInformationProvider streamInfoProvider) {
+	AudioOutputQueue(final AudioStreamInformationProvider streamInfoProvider, int streamType) {
 		final AudioFormat audioFormat = streamInfoProvider.getAudioFormat();
 
 		m_format = audioFormat;
@@ -340,13 +341,13 @@ public class AudioOutputQueue implements AudioClock {
 
 		/* Compute desired line buffer size and obtain a line */
 		final int desiredBufferSize = (int)Math.pow(2, Math.ceil(Math.log(BufferSizeSeconds * m_sampleRate * m_bytesPerFrame) / Math.log(2.0)));
-		m_audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC,
+		m_audioTrack = new AudioTrack(streamType,
 				m_format.getSampleRate(),
 				android.media.AudioFormat.CHANNEL_OUT_STEREO,
 				android.media.AudioFormat.ENCODING_PCM_16BIT,
 				desiredBufferSize,
 				AudioTrack.MODE_STREAM);
-		s_logger.info("Audio track created. Requested buffer of " + desiredBufferSize / m_bytesPerFrame  + " frames, got " + (desiredBufferSize / m_bytesPerFrame) + " frames");
+		s_logger.info("Audio track created of type " + streamType +  ". Requested buffer of " + desiredBufferSize / m_bytesPerFrame  + " frames, got " + (desiredBufferSize / m_bytesPerFrame) + " frames");
 
 		/* Start enqueuer thread and wait for the line to start.
 		 * The wait guarantees that the AudioClock functions return
