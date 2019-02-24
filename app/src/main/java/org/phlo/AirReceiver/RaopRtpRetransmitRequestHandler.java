@@ -369,8 +369,8 @@ public class RaopRtpRetransmitRequestHandler extends SimpleChannelUpstreamHandle
 	 * @return number of intermediate sequences
 	 */
 	private static long sequenceDistance(final int from, final int to) {
-		assert (from & 0xffff) == from;
-		assert (to & 0xffff) == to;
+		//assert (from & 0xffff) == from;
+		//assert (to & 0xffff) == to;
 
 		return (0x10000 + to - from) % 0x10000;
 	}

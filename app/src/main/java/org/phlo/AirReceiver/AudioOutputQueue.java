@@ -21,7 +21,6 @@ import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Build;
 
-import java.util.Arrays;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -113,13 +112,14 @@ public class AudioOutputQueue implements AudioClock {
 	/**
 	 * The seconds time corresponding to line time zero
 	 */
-	private final double m_secondsTimeOffset;
+	private double m_secondsTimeOffset;
 
 	/**
 	 * Requested line gain
 	 */
 	private float m_requestedGain = 0.0f;
 	private float m_trackVolume = 0.0f;
+	private static final float MUTE_VOLUME = 0.0f;
 
 	/**
 	 * Enqueuer thread
@@ -132,7 +132,7 @@ public class AudioOutputQueue implements AudioClock {
 		public void run() {
 			try {
 				/* Mute line initially to prevent clicks */
-				setLineGain(Float.NEGATIVE_INFINITY);
+				setLineGain(MUTE_VOLUME);
 
 				/* Start the line */
 				m_audioTrack.play();
@@ -201,7 +201,7 @@ public class AudioOutputQueue implements AudioClock {
 
 						if (!lineMuted) {
 							lineMuted = true;
-							setLineGain(Float.NEGATIVE_INFINITY);
+							setLineGain(MUTE_VOLUME);
 							s_logger.fine("Audio data ended at frame time " + getNextLineTime() + ", writing " + m_packetSizeFrames + " frames of silence and muted line");
 						}
 					}
@@ -219,7 +219,7 @@ public class AudioOutputQueue implements AudioClock {
 				s_logger.log(Level.SEVERE, "Audio output thread died unexpectedly", e);
 			}
 			finally {
-				setLineGain(Float.NEGATIVE_INFINITY);
+				setLineGain(MUTE_VOLUME);
 				m_audioTrack.stop();
 				m_audioTrack.release();
 			}
@@ -232,13 +232,12 @@ public class AudioOutputQueue implements AudioClock {
 		 * just a filler, some warnings are suppressed.
 		 *
 		 * @param samples sample data
-		 * @param off sample data offset
 		 * @param len sample data length
 		 * @param lineTime playback time
 		 */
 		private void appendFrames(final byte[] samples, int off, final int len, long lineTime) {
-			assert off % m_bytesPerFrame == 0;
-			assert len % m_bytesPerFrame == 0;
+			//assert off % m_bytesPerFrame == 0;
+			//assert len % m_bytesPerFrame == 0;
 
 			while (true) {
 				/* Fetch line end time only once per iteration */
@@ -270,7 +269,7 @@ public class AudioOutputQueue implements AudioClock {
 				}
 				else {
 					/* Strange universe... */
-					assert false;
+					//assert false;
 				}
 			}
 		}
@@ -290,8 +289,8 @@ public class AudioOutputQueue implements AudioClock {
 		 * @param len sample data length
 		 */
 		private void appendFrames(final byte[] samples, int off, int len) {
-			assert off % m_bytesPerFrame == 0;
-			assert len % m_bytesPerFrame == 0;
+			//assert off % m_bytesPerFrame == 0;
+			//assert len % m_bytesPerFrame == 0;
 
 			/* Make sure that [off,off+len) does not exceed sample's bounds */
 			off = Math.min(off, (samples != null) ? samples.length : 0);
@@ -300,18 +299,17 @@ public class AudioOutputQueue implements AudioClock {
 				return;
 
 			/* Convert samples if necessary */
-			final byte[] samplesConverted = Arrays.copyOfRange(samples, off, off+len);
 			if (m_convertUnsignedToSigned) {
 				/* The line expects signed PCM samples, so we must
 				 * convert the unsigned PCM samples to signed.
 				 * Note that this only affects the high bytes!
 				 */
-				for(int i=0; i < samplesConverted.length; i += 2)
-					samplesConverted[i] = (byte)((samplesConverted[i] & 0xff) - 0x80);
+				for(int i=0; i < len; i += 2)
+					samples[off + i] = (byte)((samples[off + i] & 0xff) - 0x80);
 			}
 
 			/* Write samples to line */
-			final int bytesWritten = m_audioTrack.write(samplesConverted, 0, samplesConverted.length);
+			final int bytesWritten = m_audioTrack.write(samples, off, len);
 			if (bytesWritten != len)
 				s_logger.warning("Audio output line accepted only " + bytesWritten + " bytes of sample data while trying to write " + samples.length + " bytes");
 
@@ -357,12 +355,21 @@ public class AudioOutputQueue implements AudioClock {
 		m_queueThread.setDaemon(true);
 		m_queueThread.setName("Audio Enqueuer");
 		m_queueThread.setPriority(Thread.MAX_PRIORITY);
-		m_queueThread.start();
-		/*while (m_queueThread.isAlive() && !m_audioTrack.isActive())
+		/*m_queueThread.start();
+		while (m_queueThread.isAlive() && !m_audioTrack.isActive())
 			Thread.yield();*/
 
 		/* Initialize the seconds time offset now that the line is running. */
-		m_secondsTimeOffset = 2208988800.0 +  System.currentTimeMillis() * 1e-3;
+		m_secondsTimeOffset = System.currentTimeMillis() * 1e-3;
+	}
+
+	public void start(){
+		m_queueThread.start();
+		while (m_queueThread.isAlive() && m_audioTrack.getPlayState() != AudioTrack.PLAYSTATE_PLAYING)
+			Thread.yield();
+
+		/* Initialize the seconds time offset now that the line is running. */
+		m_secondsTimeOffset = System.currentTimeMillis() * 1e-3;
 	}
 
 	/**
@@ -467,7 +474,7 @@ public class AudioOutputQueue implements AudioClock {
 		final long frameTimeOffsetPrevious = m_frameTimeOffset;
 		m_frameTimeOffset = frameTime - lineTime;
 
-		s_logger.fine("Frame time adjusted by " + (m_frameTimeOffset - frameTimeOffsetPrevious) + " based on timing information " + ageSeconds + " seconds old and " + (m_latestSeenFrameTime - frameTime) + " frames before latest seen frame time");
+		s_logger.info("Frame time adjusted by " + (m_frameTimeOffset - frameTimeOffsetPrevious) + " based on timing information " + ageSeconds + " seconds old and " + (m_latestSeenFrameTime - frameTime) + " frames before latest seen frame time");
 	}
 
 	@Override
@@ -502,11 +509,11 @@ public class AudioOutputQueue implements AudioClock {
 	private long m_lastPosition = 0;
 	private long m_totalPosition = 0;
 
-	private long getNowLineTime() {
+	private synchronized long getNowLineTime() {
 		if (m_audioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
 			int intPos = m_audioTrack.getPlaybackHeadPosition();
-			long longPos = ((long) intPos) & 0xffffffffL;
-			if (longPos < m_lastPosition) {
+			long longPos = intPos & 0xffffffffL;
+			if (longPos < m_lastPosition && longPos < 0x7fffffffL && m_lastPosition > 0x80000000L) {
 				// wrap(overflow), need to fix it as 64 bits
 				m_totalPosition += 0xffffffffL;
 			}

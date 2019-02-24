@@ -32,7 +32,7 @@ import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.group.*;
-import org.jboss.netty.channel.socket.nio.NioDatagramChannelFactory;
+import org.jboss.netty.channel.socket.oio.OioDatagramChannelFactory;
 import org.jboss.netty.handler.codec.http.*;
 import org.jboss.netty.handler.codec.rtsp.*;
 import org.jboss.netty.handler.execution.ExecutionHandler;
@@ -126,11 +126,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 			final RaopRtpPacket.Audio audioPacket = (RaopRtpPacket.Audio)evt.getMessage();
 
 			/* Get audio output queue from the enclosing RaopAudioHandler */
-			AudioOutputQueue audioOutputQueue;
-			synchronized(RaopAudioHandler.this) {
-				audioOutputQueue = m_audioOutputQueue;
-			}
-
+			AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
 			if (audioOutputQueue != null) {
 				final byte[] samples = new byte[audioPacket.getPayload().capacity()];
 				audioPacket.getPayload().getBytes(0, samples);
@@ -166,7 +162,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	private ChannelHandler m_decryptionHandler;
 	private ChannelHandler m_audioDecodeHandler;
 	private ChannelHandler m_resendRequestHandler;
-	private ChannelHandler m_timingHandler;
+	private RaopRtpTimingHandler m_timingHandler;
 	private final ChannelHandler m_audioEnqueueHandler = new RaopRtpAudioEnqueueHandler();
 
 	private AudioStreamInformationProvider m_audioStreamInformationProvider;
@@ -196,9 +192,10 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	 * Resets stream-related data (i.e. undoes the effect of ANNOUNCE, SETUP and RECORD
 	 */
 	private void reset() {
-		if (m_audioOutputQueue != null)
-			m_audioOutputQueue.close();
+		AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
 		m_audioOutputQueue = null;
+		if (audioOutputQueue != null)
+			audioOutputQueue.close();
 
 		m_rtpChannels.close();
 
@@ -440,13 +437,14 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		m_audioDecodeHandler = handler;
 
 		/* Create audio output queue with the format information provided by the ALAC decoder */
+		AudioOutputQueue audioOutputQueue =
 		m_audioOutputQueue = new AudioOutputQueue(m_audioStreamInformationProvider);
 
 		/* Create timing handle, using the AudioOutputQueue as time source */
-		m_timingHandler = new RaopRtpTimingHandler(m_audioOutputQueue);
+		m_timingHandler = new RaopRtpTimingHandler(audioOutputQueue);
 
 		/* Create retransmit request handler using the audio output queue as time source */
-		m_resendRequestHandler = new RaopRtpRetransmitRequestHandler(m_audioStreamInformationProvider, m_audioOutputQueue);
+		m_resendRequestHandler = new RaopRtpRetransmitRequestHandler(m_audioStreamInformationProvider, audioOutputQueue);
 
 		final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0,  RtspResponseStatuses.OK);
 		ctx.getChannel().write(response);
@@ -571,6 +569,13 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		if (m_audioStreamInformationProvider == null)
 			throw new ProtocolException("Audio stream not configured, cannot start recording");
 
+		AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
+		RaopRtpTimingHandler timingHandler = m_timingHandler;
+		if (audioOutputQueue != null)
+			audioOutputQueue.start();
+		if (timingHandler != null)
+			timingHandler.start();
+
 		s_logger.info("Client started streaming");
 
 		final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0,  RtspResponseStatuses.OK);
@@ -584,8 +589,9 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	 * helpful. But iOS doesn't, so we ignore it all together.
 	 */
 	private synchronized void flushReceived(final ChannelHandlerContext ctx, final HttpRequest req) {
-		if (m_audioOutputQueue != null)
-			m_audioOutputQueue.flush();
+		AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
+		if (audioOutputQueue != null)
+			audioOutputQueue.flush();
 
 		s_logger.info("Client paused streaming, flushed audio output queue");
 
@@ -639,9 +645,10 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 
 				if ("volume".equals(name)) {
 					/* Set output gain */
-					if (m_audioOutputQueue != null) {
+					AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
+					if (audioOutputQueue != null) {
 						float volume = Float.parseFloat(value);
-						m_audioOutputQueue.setGain(AudioVolume.fromAirTunes(volume));
+						audioOutputQueue.setGain(AudioVolume.fromAirTunes(volume));
 					}
 				}
 			}
@@ -662,10 +669,11 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	{
 		final StringBuilder body = new StringBuilder();
 
-		if (m_audioOutputQueue != null) {
+		AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
+		if (audioOutputQueue != null) {
 			/* Report output gain */
 			body.append("volume: ");
-			body.append(AudioVolume.toAirTunes(m_audioOutputQueue.getGain()));
+			body.append(AudioVolume.toAirTunes(audioOutputQueue.getGain()));
 			body.append("\r\n");
 		}
 
@@ -684,8 +692,10 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	 */
 	private Channel createRtpChannel(final SocketAddress local, final SocketAddress remote, final RaopRtpChannelType channelType)
 	{
-		/* Create bootstrap helper for a data-gram socket using NIO */
-		final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new NioDatagramChannelFactory(m_rtpExecutorService));
+		/* Create bootstrap helper for a data-gram socket using OIO,
+		 * default is NIO which not work <= Android 5.1 ???
+		 */
+		final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_rtpExecutorService));
 		
 		/* Set the buffer size predictor to 1500 bytes to ensure that
 		 * received packets will fit into the buffer. Packets are
@@ -771,7 +781,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		 * According to
 		 *   http://stackoverflow.com/questions/1512578/jvm-crash-on-opening-a-return-socketchannel
 		 * converting to address to a string first fixes the problem.
-		 */
-		return new InetSocketAddress(address.getAddress().getHostAddress(), port);
+		 */ // .getHostAddress()
+		return new InetSocketAddress(address.getAddress(), port);
 	}
 }

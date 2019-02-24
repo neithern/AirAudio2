@@ -29,15 +29,15 @@ import org.jboss.netty.channel.*;
  * sync packet.
  */
 public class RaopRtpTimingHandler extends SimpleChannelHandler {
-	private static Logger s_logger = Logger.getLogger(RaopRtpTimingHandler.class.getName());
+	private static Logger s_logger = Logger.getLogger("RaopRtpTimingHandler");
 
 	/**
-	 * Number of seconds between {@link TimingRequest}s.
+	 * Number of seconds between {@link RaopRtpPacket.TimingRequest}s.
 	 */
-	public static final double TimeRequestInterval = 0.2;
+	public static final double TimeRequestInterval = 3;
 
 	/**
-	 * Thread which sends out {@link TimingRequests}s.
+	 * Thread which sends out {@link RaopRtpPacket.TimingRequest}s.
 	 */
 	private class TimingRequester implements Runnable {
 		private final Channel m_channel;
@@ -80,8 +80,19 @@ public class RaopRtpTimingHandler extends SimpleChannelHandler {
 	 */
 	private Thread m_synchronizationThread;
 
+	private boolean m_started = false;
+
 	public RaopRtpTimingHandler(final AudioClock audioClock) {
 		m_audioClock = audioClock;
+	}
+
+	public synchronized void start() {
+		/* Start synchronization thread if it isn't already running */
+		if (m_synchronizationThread != null && !m_started) {
+			m_synchronizationThread.start();
+			m_started = true;
+			s_logger.fine("Time synchronizer started");
+		}
 	}
 
 	@Override
@@ -95,8 +106,8 @@ public class RaopRtpTimingHandler extends SimpleChannelHandler {
 			m_synchronizationThread = new Thread(new TimingRequester(ctx.getChannel()));
 			m_synchronizationThread.setDaemon(true);
 			m_synchronizationThread.setName("Time Synchronizer");
-			m_synchronizationThread.start();
-			s_logger.fine("Time synchronizer started");
+			//m_synchronizationThread.start();
+			//s_logger.fine("Time synchronizer started");
 		}
 
 		super.channelOpen(ctx, evt);
@@ -107,8 +118,10 @@ public class RaopRtpTimingHandler extends SimpleChannelHandler {
 		throws Exception
 	{
 		synchronized(this) {
-			if (m_synchronizationThread != null)
+			if (m_synchronizationThread != null) {
 				m_synchronizationThread.interrupt();
+				m_started = false;
+			}
 		}
 	}
 
