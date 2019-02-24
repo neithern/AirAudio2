@@ -55,7 +55,7 @@ public class AirAudioService extends IntentService {
                     server.stop();
                 }
                 if (!shutDown && !server.isRunning()) {
-                    server.start(name, 0);
+                    server.start(name, 46343);
                 }
                 Intent result = new Intent(BROADCAST_SERVER_STATE);
                 result.putExtra(EXTRA_NAME, name);
@@ -69,8 +69,11 @@ public class AirAudioService extends IntentService {
         String name = intent != null ? intent.getStringExtra(EXTRA_NAME) : null;
         if (name == null || name.isEmpty()) {
             name = PreferenceManager.getDefaultSharedPreferences(context).getString(EXTRA_NAME, null);
-            if (name == null || name.isEmpty())
-                name = BuildConfig.DEBUG ? "DebugAudio" : context.getString(R.string.app_name);
+            if (name == null || name.isEmpty()) {
+                name = context.getString(R.string.app_name);
+                if (BuildConfig.DEBUG)
+                    name += "(Debug)";
+            }
         } else {
             PreferenceManager.getDefaultSharedPreferences(context).edit().putString(EXTRA_NAME, name).apply();
         }
