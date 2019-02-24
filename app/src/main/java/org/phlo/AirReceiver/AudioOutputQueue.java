@@ -253,7 +253,7 @@ public class AudioOutputQueue implements AudioClock {
 				}
 				else if (timingErrorFrames > 0) {
 					/* Samples to append scheduled after the line end. Fill the gap with silence */
-					s_logger.warning("Audio output non-continous (gap of " + timingErrorFrames + " frames), filling with silence");
+					//s_logger.warning("Audio output non-continous (gap of " + timingErrorFrames + " frames), filling with silence");
 
 					appendSilence((int)(lineTime - endLineTime));
 				}
@@ -261,7 +261,7 @@ public class AudioOutputQueue implements AudioClock {
 					/* Samples to append scheduled before the line end. Remove the overlapping
 					 * part and retry
 					 */
-					s_logger.warning("Audio output non-continous (overlap of " + (-timingErrorFrames) + "), skipping overlapping frames");
+					//s_logger.warning("Audio output non-continous (overlap of " + (-timingErrorFrames) + "), skipping overlapping frames");
 
 					off += (endLineTime - lineTime) * m_bytesPerFrame;
 					lineTime += endLineTime - lineTime;
