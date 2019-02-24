@@ -48,6 +48,10 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	 */
 	static enum RaopRtpChannelType { Audio, Control, Timing };
 
+	private static final int RTP_AUDIO_PORT = 56300;
+	private static final int RTP_CONTROL_PORT = 56301;
+	private static final int RTP_TIMING_PORT = 56302;
+
 	private static final String HeaderTransport = "Transport";
 	private static final String HeaderSession = "Session";
 
@@ -465,7 +469,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	 * For RAOP/AirTunes, {@code <protocol>} is always {@code RTP/AVP/UDP}.
 	 */
 	private static Pattern s_pattern_transportOption = Pattern.compile("^([A-Za-z0-9_-]+)(=(.*))?$");
-	
+
 	/**
 	 * Handles SETUP requests and creates the audio, control and timing RTP channels
 	 */
@@ -511,7 +515,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 				/* Port number of the client's control socket. Response includes port number of *our* control port */
 				final int clientControlPort = Integer.valueOf(value);
 				m_controlChannel = createRtpChannel(
-					substitutePort((InetSocketAddress)ctx.getChannel().getLocalAddress(), 0),
+					substitutePort((InetSocketAddress)ctx.getChannel().getLocalAddress(), RTP_CONTROL_PORT),
 					substitutePort((InetSocketAddress)ctx.getChannel().getRemoteAddress(), clientControlPort),
 					RaopRtpChannelType.Control
 				);
@@ -522,7 +526,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 				/* Port number of the client's timing socket. Response includes port number of *our* timing port */
 				final int clientTimingPort = Integer.valueOf(value);
 				m_timingChannel = createRtpChannel(
-					substitutePort((InetSocketAddress)ctx.getChannel().getLocalAddress(), 0),
+					substitutePort((InetSocketAddress)ctx.getChannel().getLocalAddress(), RTP_TIMING_PORT),
 					substitutePort((InetSocketAddress)ctx.getChannel().getRemoteAddress(), clientTimingPort),
 					RaopRtpChannelType.Timing
 				);
@@ -537,7 +541,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 
 		/* Create audio socket and include it's port in our response */
 		m_audioChannel = createRtpChannel(
-			substitutePort((InetSocketAddress)ctx.getChannel().getLocalAddress(), 0),
+			substitutePort((InetSocketAddress)ctx.getChannel().getLocalAddress(), RTP_AUDIO_PORT),
 			null,
 			RaopRtpChannelType.Audio
 		);
