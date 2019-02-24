@@ -1,6 +1,6 @@
 package com.github.neithern.airaudio;
 
-import android.app.IntentService;
+import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -14,7 +14,7 @@ import android.preference.PreferenceManager;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-public class AirAudioService extends IntentService {
+public class AirAudioService extends Service {
     public static final String BROADCAST_SERVER_STATE = "SERVER_STATE";
     public static final String EXTRA_ON = "server_on";
     public static final String EXTRA_NAME = "name";
@@ -31,11 +31,7 @@ public class AirAudioService extends IntentService {
         context.startService(intent);
     }
 
-    final Executor executor = Executors.newSingleThreadExecutor();
-
-    public AirAudioService() {
-        super("AirAudioService");
-    }
+    private static final Executor executor = Executors.newSingleThreadExecutor();
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -51,7 +47,7 @@ public class AirAudioService extends IntentService {
     }
 
     @Override
-    protected void onHandleIntent(Intent intent) {
+    public int onStartCommand(Intent intent, int flags, int startId) {
         final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(this);
         final String action = intent != null ? intent.getAction() : null;
         final Bundle extras = intent != null ? intent.getExtras() : null;
@@ -74,6 +70,7 @@ public class AirAudioService extends IntentService {
                 sendBroadcast(result);
             }
         });
+        return START_STICKY;
     }
 
     public static String getName(Bundle extras, SharedPreferences pref) {
