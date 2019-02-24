@@ -2,4 +2,9 @@
     <string name="app_name">AirAudio</string>
     <string name="server_name">Server name:</string>
     <string name="server_switch">Server switch:</string>
+    <string name="stream_type">Audio stream type:</string>
+    <string name="stream_music">Music</string>
+    <string name="stream_ring">Ring</string>
+    <string name="stream_system">System</string>
+    <string name="stream_tts">TTS</string>
 </resources>

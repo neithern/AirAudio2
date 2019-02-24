@@ -5,7 +5,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.Switch;
@@ -58,7 +60,8 @@ public class MainActivity extends Activity {
         });
 
         Intent intent = getIntent();
-        String name = AirAudioService.getName(this, intent);
+        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(this);
+        String name = AirAudioService.getName(intent.getExtras(), pref);
         setTitle(name);
         serverName.setText(name);
 
