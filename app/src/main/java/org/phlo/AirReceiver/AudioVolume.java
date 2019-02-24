@@ -4,7 +4,7 @@ import android.media.AudioTrack;
 
 public class AudioVolume {
     private static final float AIR_VOLUME_MAX = 0;
-	private static final float AIR_VOLUME_MIN = -29;
+	private static final float AIR_VOLUME_MIN = -30;
     private static final float AIR_VOLUME_RANGE = AIR_VOLUME_MAX - AIR_VOLUME_MIN;
 
 	private static final float TRACK_VOLUME_MIN = AudioTrack.getMinVolume();
