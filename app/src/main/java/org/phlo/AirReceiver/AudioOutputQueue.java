@@ -20,6 +20,8 @@ package org.phlo.AirReceiver;
 import android.media.AudioTrack;
 import android.os.Build;
 
+import org.jboss.netty.buffer.ChannelBuffer;
+
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -78,15 +80,14 @@ public class AudioOutputQueue implements AudioClock {
 	private AudioTrack m_audioTrack;
 
 	/**
-	 * The last frame written to the line.
-	 * Used to generate filler data
+	 * The prepared silence data
 	 */
-	private final byte[] m_lineLastFrame;
+	private final byte[] m_silenceFrames;
 
 	/**
 	 * Packet queue, indexed by playback time
 	 */
-	private final ConcurrentSkipListMap<Long, byte[]> m_queue = new ConcurrentSkipListMap<Long, byte[]>();
+	private final ConcurrentSkipListMap<Long, ChannelBuffer> m_queue = new ConcurrentSkipListMap<>();
 
 	/**
 	 * Enqueuer thread
@@ -173,8 +174,8 @@ public class AudioOutputQueue implements AudioClock {
 							}
 
 							/* Get sample data and do sanity checks */
-							final byte[] nextPlaybackSamples = m_queue.remove(entryFrameTime);
-							int nextPlaybackSamplesLength = nextPlaybackSamples.length;
+							final ChannelBuffer buffer = m_queue.remove(entryFrameTime);
+							int nextPlaybackSamplesLength = buffer.capacity();
 							if (nextPlaybackSamplesLength % m_bytesPerFrame != 0) {
 								s_logger.severe("Audio data contains non-integral number of frames, ignore last " + (nextPlaybackSamplesLength % m_bytesPerFrame) + " bytes");
 
@@ -183,7 +184,7 @@ public class AudioOutputQueue implements AudioClock {
 
 							/* Append packet to line */
 							s_logger.finest("Audio data containing " + nextPlaybackSamplesLength / m_bytesPerFrame + " frames for playback time " + entryFrameTime + " found in queue, appending to the output line");
-							appendFrames(nextPlaybackSamples, 0, nextPlaybackSamplesLength, entryLineTime);
+							appendFrames(buffer.array(), buffer.arrayOffset(), nextPlaybackSamplesLength, entryLineTime);
 							continue;
 						}
 						else {
@@ -238,7 +239,7 @@ public class AudioOutputQueue implements AudioClock {
 			//assert off % m_bytesPerFrame == 0;
 			//assert len % m_bytesPerFrame == 0;
 
-			while (true) {
+			while (!m_closing) {
 				/* Fetch line end time only once per iteration */
 				final long endLineTime = getNextLineTime();
 
@@ -275,11 +276,12 @@ public class AudioOutputQueue implements AudioClock {
 			}
 		}
 
-		private void appendSilence(final int frames) {
-			final byte[] silenceFrames = new byte[frames * m_bytesPerFrame];
-			for(int i = 0; i < silenceFrames.length; ++i)
-				silenceFrames[i] = m_lineLastFrame[i % m_bytesPerFrame];
-			appendFrames(silenceFrames, 0, silenceFrames.length);
+		private void appendSilence(int frames) {
+			while (frames > 0 && !m_closing) {
+				final int length = Math.min(frames, m_packetSizeFrames) * m_bytesPerFrame;
+				appendFrames(m_silenceFrames, 0, length);
+				frames -= m_packetSizeFrames;
+			}
 		}
 
 		/**
@@ -309,18 +311,25 @@ public class AudioOutputQueue implements AudioClock {
 					samples[off + i] = (byte)((samples[off + i] & 0xff) - 0x80);
 			}
 
-			/* Write samples to line */
-			final int bytesWritten = m_audioTrack.write(samples, off, len);
-			if (bytesWritten != len)
-				s_logger.warning("Audio output line accepted only " + bytesWritten + " bytes of sample data while trying to write " + samples.length + " bytes");
+			/* Write samples to audio track */
+			int bytesWritten = 0;
+			while (len > 0 && !m_closing) {
+				final int ret = m_audioTrack.write(samples, off, len);
+				if (ret < 0)
+					s_logger.warning("Audio track written error: " + ret + " of " + len + " bytes");
+				else if (ret != len)
+					s_logger.warning("Audio track accepted only " + ret + " bytes of " + len + " bytes");
+				if (ret > 0) {
+					off += ret;
+					len -= ret;
+					bytesWritten += ret;
+				}
+			}
 
 			/* Update state */
 			synchronized(AudioOutputQueue.this) {
 				m_lineFramesWritten += bytesWritten / m_bytesPerFrame;
-				for(int b=0; b < m_bytesPerFrame; ++b)
-					m_lineLastFrame[b] = samples[off + len - (m_bytesPerFrame - b)];
-
-				s_logger.finest("Audio output line end is now at " + getNextLineTime() + " after writing " + len / m_bytesPerFrame + " frames");
+				s_logger.finest("Audio track end is now at " + getNextLineTime() + " after writing " + len / m_bytesPerFrame + " frames");
 			}
 		}
 	}
@@ -335,9 +344,9 @@ public class AudioOutputQueue implements AudioClock {
 		m_packetSizeFrames = streamInfoProvider.getFramesPerPacket();
 		m_bytesPerFrame = m_format.getChannels() * m_format.getSampleSizeInBits() / 8;
 		m_sampleRate = m_format.getSampleRate();
-		m_lineLastFrame = new byte[m_bytesPerFrame];
-		for(int b=0; b < m_lineLastFrame.length; ++b)
-			m_lineLastFrame[b] = (b % 2 == 0) ? (byte)-128 : (byte)0;
+		m_silenceFrames = new byte[m_packetSizeFrames * m_bytesPerFrame];
+		for(int b=0; b < m_silenceFrames.length; ++b)
+			m_silenceFrames[b] = (b % 2 == 0) ? (byte)-128 : (byte)0;
 
 		/* Compute desired line buffer size and obtain a line */
 		final int desiredBufferSize = (int)Math.pow(2, Math.ceil(Math.log(BufferSizeSeconds * m_sampleRate * m_bytesPerFrame) / Math.log(2.0)));
@@ -427,18 +436,19 @@ public class AudioOutputQueue implements AudioClock {
 	 * Adds sample data to the queue
 	 *
 	 * @param frameTime start time of sample data
-	 * @param frames sample data
+	 * @param buffer sample data
 	 * @return true if the sample data was added to the queue
 	 */
-	public synchronized boolean enqueue(final long frameTime, final byte[] frames) {
+	public synchronized boolean enqueue(final long frameTime, final ChannelBuffer buffer) {
+		final int length = buffer.capacity();
 		/* Playback time of packet */
-		final double packetSeconds = (double)frames.length / (double)(m_bytesPerFrame * m_sampleRate);
+		final double packetSeconds = (double)length / (m_bytesPerFrame * m_sampleRate);
 		
 		/* Compute playback delay, i.e., the difference between the last sample's
 		 * playback time and the current line time
 		 */
 		final double delay =
-			(convertFrameToLineTime(frameTime) + frames.length / m_bytesPerFrame - getNextLineTime()) /
+			(convertFrameToLineTime(frameTime) + length / (double) m_bytesPerFrame - getNextLineTime()) /
 			m_sampleRate;
 
 		m_latestSeenFrameTime = Math.max(m_latestSeenFrameTime, frameTime);
@@ -456,7 +466,7 @@ public class AudioOutputQueue implements AudioClock {
 			return false;
 		}
 
-		m_queue.put(frameTime, frames);
+		m_queue.put(frameTime, buffer);
 		return true;
 	}
 

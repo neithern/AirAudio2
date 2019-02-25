@@ -153,25 +153,27 @@ public class RaopRtpAudioAlacDecodeHandler extends OneToOneDecoder implements Au
 		 * The ALAC decode emits signed PCM samples as integers. We store them as
 		 * as unsigned little endian integers in the packet.
 		 */
-		int headLength;
+
 		RaopRtpPacket.Audio pcmPacket;
 		if (alacPacket instanceof RaopRtpPacket.AudioTransmit) {
 			pcmPacket = new RaopRtpPacket.AudioTransmit(pcmSamplesLength * 4);
-			alacPacket.getBuffer().getBytes(0, pcmPacket.getBuffer(), 0, headLength = RaopRtpPacket.AudioTransmit.Length);
+			alacPacket.getBuffer().getBytes(0, pcmPacket.getBuffer(), 0, RaopRtpPacket.AudioTransmit.Length);
 		}
 		else if (alacPacket instanceof RaopRtpPacket.AudioRetransmit) {
 			pcmPacket = new RaopRtpPacket.AudioRetransmit(pcmSamplesLength * 4);
-			alacPacket.getBuffer().getBytes(0, pcmPacket.getBuffer(), 0, headLength = RaopRtpPacket.AudioRetransmit.Length);
+			alacPacket.getBuffer().getBytes(0, pcmPacket.getBuffer(), 0, RaopRtpPacket.AudioRetransmit.Length);
 		}
 		else
 			throw new ProtocolException("Packet type " + alacPacket.getClass() + " is not supported by the ALAC decoder");
 
 		final byte[] payload = pcmPacket.getPayload().array();
+		final int offset = pcmPacket.getPayload().arrayOffset();
+
 		for(int i=0; i < pcmSamples.length; ++i) {
 			/* Convert sample to little endian unsigned integer PCM */
 			final int pcmSampleUnsigned = pcmSamples[i];
-			payload[headLength + 2*i] = (byte) (pcmSampleUnsigned & 0x00ff);
-			payload[headLength + 2*i + 1] = (byte) ((pcmSampleUnsigned & 0xff00) >> 8);
+			payload[offset + 2*i] = (byte) (pcmSampleUnsigned & 0x00ff);
+			payload[offset + 2*i + 1] = (byte) ((pcmSampleUnsigned & 0xff00) >> 8);
 		}
 
 		return pcmPacket;

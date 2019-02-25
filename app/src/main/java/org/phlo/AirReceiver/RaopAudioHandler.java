@@ -132,9 +132,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 			/* Get audio output queue from the enclosing RaopAudioHandler */
 			AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
 			if (audioOutputQueue != null) {
-				final byte[] samples = new byte[audioPacket.getPayload().capacity()];
-				audioPacket.getPayload().getBytes(0, samples);
-				audioOutputQueue.enqueue(audioPacket.getTimeStamp(), samples);
+				audioOutputQueue.enqueue(audioPacket.getTimeStamp(), audioPacket.getPayload());
 				if (s_logger.isLoggable(Level.FINEST))
 					s_logger.finest("Packet with sequence " + audioPacket.getSequence() + " for playback at " + audioPacket.getTimeStamp() + " submitted to audio output queue");
 			}
