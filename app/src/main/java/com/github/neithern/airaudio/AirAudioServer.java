@@ -13,6 +13,7 @@ import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.jboss.netty.handler.execution.OrderedMemoryAwareThreadPoolExecutor;
+import org.phlo.AirReceiver.AudioChannel;
 import org.phlo.AirReceiver.HardwareAddressMap;
 import org.phlo.AirReceiver.RaopRtspPipelineFactory;
 
@@ -70,7 +71,7 @@ public class AirAudioServer {
         return running;
     }
 
-    public boolean start(String displayName, int rtspPort, int audioStream) {
+    public boolean start(String displayName, int rtspPort, int audioStream, AudioChannel channelMode) {
         Enumeration<NetworkInterface> eni = null;
         try {
             eni = NetworkInterface.getNetworkInterfaces();
@@ -81,7 +82,7 @@ public class AirAudioServer {
 
         /* Create AirTunes RTSP server */
         RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(
-                audioStream,
+                audioStream, channelMode,
                 executor, executionHandler, hardwareAddresses,
                 new SimpleChannelUpstreamHandler() {
                     @Override

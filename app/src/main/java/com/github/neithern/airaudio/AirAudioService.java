@@ -11,6 +11,8 @@ import android.os.IBinder;
 import android.os.StrictMode;
 import android.preference.PreferenceManager;
 
+import org.phlo.AirReceiver.AudioChannel;
+
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -18,6 +20,7 @@ public class AirAudioService extends Service {
     public static final String BROADCAST_SERVER_STATE = "SERVER_STATE";
     public static final String EXTRA_ON = "server_on";
     public static final String EXTRA_NAME = "name";
+    public static final String EXTRA_CHANNEL_MODE = "channel";
     public static final String EXTRA_OUTPUT_STREAM = "output";
 
     private static final int RTSP_PORT = 46343;
@@ -53,6 +56,7 @@ public class AirAudioService extends Service {
         final Bundle extras = intent != null ? intent.getExtras() : null;
         final String name = getName(extras, pref);
         final int streamType = getStreamType(extras, pref);
+        final AudioChannel channelMode = getChannelMode(extras, pref);
         final boolean shutDown = Intent.ACTION_SHUTDOWN.equals(action);
         executor.execute(new Runnable() {
             @Override
@@ -62,7 +66,7 @@ public class AirAudioService extends Service {
                     server.stop();
                 }
                 if (!shutDown && !server.isRunning()) {
-                    server.start(name, RTSP_PORT, streamType);
+                    server.start(name, RTSP_PORT, streamType, channelMode);
                 }
                 Intent result = new Intent(BROADCAST_SERVER_STATE);
                 result.putExtra(EXTRA_NAME, name);
@@ -86,6 +90,25 @@ public class AirAudioService extends Service {
             pref.edit().putString(EXTRA_NAME, name).apply();
         }
         return name;
+    }
+
+    public static AudioChannel getChannelMode(Bundle extras, SharedPreferences pref) {
+        String channel = extras != null ? extras.getString(EXTRA_CHANNEL_MODE) : null;
+        AudioChannel channelMode = null;
+        if ("stereo".equals(channel))
+            channelMode = AudioChannel.STEREO;
+        else if ("left".equals(channel))
+            channelMode = AudioChannel.ONLY_LEFT;
+        else if ("right".equals(channel))
+            channelMode = AudioChannel.ONLY_RIGHT;
+        if (channelMode == null) {
+            int mode = pref.getInt(EXTRA_CHANNEL_MODE, -1);
+            AudioChannel[] values = AudioChannel.values();
+            channelMode = mode >= 0 && mode < values.length ? values[mode] : AudioChannel.STEREO;
+        } else {
+            pref.edit().putInt(EXTRA_CHANNEL_MODE, channelMode.ordinal()).apply();
+        }
+        return channelMode;
     }
 
     public static int getStreamType(Bundle extras, SharedPreferences pref) {

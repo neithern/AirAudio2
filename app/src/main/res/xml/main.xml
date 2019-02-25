@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <EditTextPreference
+        android:key="name"
+        android:title="@string/server_name" />
+
+    <com.github.neithern.airaudio.IntegerListPreference
+        android:key="output"
+        android:title="@string/stream_type"
+        android:defaultValue="3"
+        android:entries="@array/stream_type_titles"
+        android:entryValues="@array/stream_type_values" />
+
+    <com.github.neithern.airaudio.IntegerListPreference
+        android:key="channel"
+        android:title="@string/channel_mode"
+        android:defaultValue="0"
+        android:entries="@array/channel_mode_titles"
+        android:entryValues="@array/channel_mode_values" />
+
+</PreferenceScreen>

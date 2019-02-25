@@ -1,8 +1,11 @@
 <resources>
     <string name="app_name">AirAudio</string>
-    <string name="server_name">服务名称：</string>
-    <string name="server_switch">服务开关：</string>
-    <string name="stream_type">音频播放流类型：</string>
+    <string name="channel_mode">声道模式</string>
+    <string name="channel_stereo">播放立体声</string>
+    <string name="channel_only_left">仅播放左声道</string>
+    <string name="channel_only_right">仅播放右声道</string>
+    <string name="server_name">服务名称</string>
+    <string name="stream_type">音频播放流类型</string>
     <string name="stream_music">音乐</string>
     <string name="stream_ring">铃声</string>
     <string name="stream_system">系统</string>

@@ -1,8 +1,11 @@
 <resources>
     <string name="app_name">AirAudio</string>
-    <string name="server_name">Server name:</string>
-    <string name="server_switch">Server switch:</string>
-    <string name="stream_type">Audio stream type:</string>
+    <string name="channel_mode">Channel mode</string>
+    <string name="channel_stereo">Stereo</string>
+    <string name="channel_only_left">Only left</string>
+    <string name="channel_only_right">Only right</string>
+    <string name="server_name">Server name</string>
+    <string name="stream_type">Audio stream type</string>
     <string name="stream_music">Music</string>
     <string name="stream_ring">Ring</string>
     <string name="stream_system">System</string>

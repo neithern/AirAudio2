@@ -28,15 +28,18 @@ import java.util.concurrent.ExecutorService;
  */
 public class RaopRtspPipelineFactory implements ChannelPipelineFactory {
 	private final int m_audioStream;
+	private final AudioChannel m_channelMode;
 	private final ExecutorService m_executor;
 	private final ExecutionHandler m_executionHandler;
     private final HardwareAddressMap m_hardwareAddressMap;
 	private final ChannelUpstreamHandler m_closeOnShutdownHandler;
 
-	public RaopRtspPipelineFactory(int audioStream, ExecutorService executor, ExecutionHandler executionHandler,
+	public RaopRtspPipelineFactory(int audioStream, AudioChannel channelMode,
+								   ExecutorService executor, ExecutionHandler executionHandler,
                                    HardwareAddressMap hardwareAddressMap,
 								   ChannelUpstreamHandler closeOnShutdownHandler) {
 		m_audioStream = audioStream;
+		m_channelMode = channelMode;
 		m_executor = executor;
 		m_executionHandler = executionHandler;
         m_hardwareAddressMap = hardwareAddressMap;
@@ -57,7 +60,7 @@ public class RaopRtspPipelineFactory implements ChannelPipelineFactory {
 		pipeline.addLast("challengeResponse", new RaopRtspChallengeResponseHandler(m_hardwareAddressMap));
 		pipeline.addLast("header", new RaopRtspHeaderHandler());
 		pipeline.addLast("options", new RaopRtspOptionsHandler());
-		pipeline.addLast("audio", new RaopAudioHandler(m_executor, m_executionHandler, m_audioStream));
+		pipeline.addLast("audio", new RaopAudioHandler(m_executor, m_executionHandler, m_audioStream, m_channelMode));
 		pipeline.addLast("unsupportedResponse", new RtspUnsupportedResponseHandler());
 
 		return pipeline;

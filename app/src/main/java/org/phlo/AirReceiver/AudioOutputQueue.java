@@ -51,10 +51,9 @@ public class AudioOutputQueue implements AudioClock {
 	private final AudioFormat m_format;
 
 	/**
-	 * True if the line's audio format is signed but
-	 * the requested format was unsigned
+	 * Audio output channel mode
 	 */
-	private final boolean m_convertUnsignedToSigned;
+	private final AudioChannel m_channelMode;
 
 	/**
 	 * Bytes per frame, i.e. number of bytes
@@ -302,13 +301,18 @@ public class AudioOutputQueue implements AudioClock {
 				return;
 
 			/* Convert samples if necessary */
-			if (m_convertUnsignedToSigned) {
-				/* The line expects signed PCM samples, so we must
-				 * convert the unsigned PCM samples to signed.
-				 * Note that this only affects the high bytes!
-				 */
-				for(int i=0; i < len; i += 2)
-					samples[off + i] = (byte)((samples[off + i] & 0xff) - 0x80);
+			if (m_bytesPerFrame == 4) {
+				if (m_channelMode == AudioChannel.ONLY_LEFT) {
+					for (int i = off; i < off + len; i += m_bytesPerFrame) {
+						samples[i + 2] = samples[i];
+						samples[i + 3] = samples[i + 1];
+					}
+				} else if (m_channelMode == AudioChannel.ONLY_RIGHT) {
+					for (int i = off; i < off + len; i += m_bytesPerFrame) {
+						samples[i] = samples[i + 2];
+						samples[i + 1] = samples[i + 3];
+					}
+				}
 			}
 
 			/* Write samples to audio track */
@@ -334,11 +338,11 @@ public class AudioOutputQueue implements AudioClock {
 		}
 	}
 
-	AudioOutputQueue(final AudioStreamInformationProvider streamInfoProvider, int streamType) {
+	AudioOutputQueue(final AudioStreamInformationProvider streamInfoProvider, int streamType, AudioChannel channelMode) {
 		final AudioFormat audioFormat = streamInfoProvider.getAudioFormat();
 
 		m_format = audioFormat;
-		m_convertUnsignedToSigned = false;
+		m_channelMode = channelMode;
 
 		/* Audio format-dependent stuff */
 		m_packetSizeFrames = streamInfoProvider.getFramesPerPacket();
