@@ -35,20 +35,12 @@ public class RaopRtpAudioDecryptionHandler extends OneToOneDecoder {
 	 */
 	private final Cipher m_aesCipher = AirTunesCrytography.getCipher("AES/CBC/NoPadding");
 
-	/**
-	 *  AES key */
-	private final SecretKey m_aesKey;
-	
-	/**
-	 * AES initialization vector
-	 */
-	private final IvParameterSpec m_aesIv;
-
 	private final byte[] m_block = new byte[16];
 
-	public RaopRtpAudioDecryptionHandler(final SecretKey aesKey, final IvParameterSpec aesIv) {
-		m_aesKey = aesKey;
-		m_aesIv = aesIv;
+	public RaopRtpAudioDecryptionHandler(final SecretKey aesKey, final IvParameterSpec aesIv)
+		throws Exception
+	{
+		m_aesCipher.init(Cipher.DECRYPT_MODE, aesKey, aesIv);
 	}
 
 	@Override
@@ -59,17 +51,22 @@ public class RaopRtpAudioDecryptionHandler extends OneToOneDecoder {
 			final RaopRtpPacket.Audio audioPacket = (RaopRtpPacket.Audio)msg;
 			final ChannelBuffer audioPayload = audioPacket.getPayload();
 
-			/* Cipher is restarted for every packet. We simply overwrite the
-			 * encrypted data with the corresponding plain text
-			 */
-			m_aesCipher.init(Cipher.DECRYPT_MODE, m_aesKey, m_aesIv);
-
-			final byte[] block = m_block;
-			for(int i=0; (i + 16) <= audioPayload.capacity(); i += 16) {
-				audioPayload.getBytes(i, block);
-				final byte[] block2 = m_aesCipher.update(block);
-				audioPayload.setBytes(i, block2);
+			final byte[] data = audioPayload.array();
+			final int offset = audioPayload.arrayOffset();
+			final int size = audioPayload.capacity();
+			for (int i = 0; i + 16 <= size; i += 16) {
+				/*
+				 * Note: Cipher.update(byte[], int, int, byte[], int) method should be copy-safe,
+				 * which means the input and output buffers can reference
+				 * the same byte array and no unprocessed input data is overwritten
+				 * when the result is copied into the output buffer.
+				 */
+				m_aesCipher.update(data, offset + i, Math.min(16, size - i),
+						data, offset + i);
 			}
+
+			/* Cipher is restarted for every packet, call doFinal() to reset it. */
+			m_aesCipher.doFinal(m_block, 0);
 		}
 
 		return msg;
