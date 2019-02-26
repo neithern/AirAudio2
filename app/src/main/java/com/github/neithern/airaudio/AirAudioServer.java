@@ -10,13 +10,14 @@ import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.ChannelGroupFuture;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
-import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
+import org.jboss.netty.channel.socket.oio.OioServerSocketChannelFactory;
 import org.jboss.netty.handler.execution.ExecutionHandler;
-import org.jboss.netty.handler.execution.OrderedMemoryAwareThreadPoolExecutor;
 import org.phlo.AirReceiver.AudioChannel;
 import org.phlo.AirReceiver.HardwareAddressMap;
 import org.phlo.AirReceiver.RaopRtspPipelineFactory;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
@@ -58,14 +59,12 @@ public class AirAudioServer {
         return SingletonHolder.mInstance;
     }
 
-    private boolean running;
     private final ChannelGroup channelGroup = new DefaultChannelGroup();
     private final ArrayList<JmDNS> jmDNSInstances = new ArrayList<>();
     private final HardwareAddressMap hardwareAddresses = new HardwareAddressMap();
     private final ExecutorService executor = Executors.newCachedThreadPool();
-    private final ExecutionHandler executionHandler = new ExecutionHandler(
-            new OrderedMemoryAwareThreadPoolExecutor(4, 0, 0)
-    );
+    private final ExecutionHandler executionHandler = new ExecutionHandler(executor);
+    private boolean running;
 
     public boolean isRunning() {
         return running;
@@ -91,7 +90,7 @@ public class AirAudioServer {
                         super.channelOpen(ctx, e);
                     }
                 });
-        ServerBootstrap serverBootstrap = new ServerBootstrap(new NioServerSocketChannelFactory(executor, executor));
+        ServerBootstrap serverBootstrap = new ServerBootstrap(new OioServerSocketChannelFactory(executor, executor));
         serverBootstrap.setPipelineFactory(factory);
         serverBootstrap.setOption("reuseAddress", true);
         serverBootstrap.setOption("child.tcpNoDelay", true);
@@ -147,6 +146,11 @@ public class AirAudioServer {
     }
 
     public void stop() {
+        /* Unregister services */
+        for (JmDNS jmDNS : jmDNSInstances)
+            closeSilently(jmDNS);
+        jmDNSInstances.clear();
+
         /* Close channels */
         final ChannelGroupFuture allChannelsClosed = channelGroup.close();
         /* Wait for all channels to finish closing */
@@ -154,17 +158,26 @@ public class AirAudioServer {
         running = false;
     }
 
+    private static void closeSilently(Closeable c) {
+        try {
+            if (c != null)
+                c.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     private static Map<String, String> map(final String... keyValues) {
-        final Map<String, String> map = new HashMap<>(keyValues.length / 2);
-        for(int i = 0; i < keyValues.length; i += 2)
-            map.put(keyValues[i], keyValues[i+1]);
+        final HashMap<String, String> map = new HashMap<>(keyValues.length / 2);
+        for (int i = 0; i < keyValues.length; i += 2)
+            map.put(keyValues[i], keyValues[i + 1]);
         return map;
     }
 
-    private String toHexString(final byte[] bytes) {
+    private static String toHexString(final byte[] bytes) {
         final StringBuilder s = new StringBuilder();
-        for(final byte b: bytes) {
-            final String h = Integer.toHexString(0x100 | b);
+        for (byte b: bytes) {
+            String h = Integer.toHexString(0x100 | b);
             s.append(h.substring(h.length() - 2).toUpperCase());
         }
         return s.toString();
