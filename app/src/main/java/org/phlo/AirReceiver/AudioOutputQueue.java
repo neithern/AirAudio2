@@ -35,6 +35,8 @@ import java.util.logging.Logger;
 public class AudioOutputQueue implements AudioClock {
 	private static Logger s_logger = Logger.getLogger("AudioOutputQueue");
 
+	private static final double TimeSince1970 = 2208988800.0;
+
 	private static final double QueueLengthMaxSeconds = 10;
 	private static final double BufferSizeSeconds = 0.05;
 	private static final double TimingPrecision = 0.001;
@@ -374,7 +376,7 @@ public class AudioOutputQueue implements AudioClock {
 			Thread.yield();*/
 
 		/* Initialize the seconds time offset now that the line is running. */
-		m_secondsTimeOffset = System.currentTimeMillis() * 1e-3;
+		m_secondsTimeOffset = TimeSince1970 + System.currentTimeMillis() * 1e-3;
 	}
 
 	public void start(){
@@ -383,7 +385,7 @@ public class AudioOutputQueue implements AudioClock {
 			Thread.yield();
 
 		/* Initialize the seconds time offset now that the line is running. */
-		m_secondsTimeOffset = System.currentTimeMillis() * 1e-3;
+		m_secondsTimeOffset = TimeSince1970 + System.currentTimeMillis() * 1e-3;
 	}
 
 	/**
