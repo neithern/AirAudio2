@@ -4,6 +4,7 @@ import android.util.Log;
 
 import org.jboss.netty.bootstrap.ServerBootstrap;
 import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelHandler;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
@@ -64,6 +65,15 @@ public class AirAudioServer {
     private final HardwareAddressMap hardwareAddresses = new HardwareAddressMap();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final ExecutionHandler executionHandler = new ExecutionHandler(executor);
+
+    private final ChannelHandler closeHandler = new SimpleChannelUpstreamHandler() {
+        @Override
+        public void channelOpen (ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
+            channelGroup.add(e.getChannel());
+            super.channelOpen(ctx, e);
+        }
+    };
+
     private boolean running;
 
     public boolean isRunning() {
@@ -82,14 +92,7 @@ public class AirAudioServer {
         /* Create AirTunes RTSP server */
         RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(
                 audioStream, channelMode,
-                executor, executionHandler, hardwareAddresses,
-                new SimpleChannelUpstreamHandler() {
-                    @Override
-                    public void channelOpen (ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
-                        channelGroup.add(e.getChannel());
-                        super.channelOpen(ctx, e);
-                    }
-                });
+                executionHandler, hardwareAddresses, closeHandler);
         ServerBootstrap serverBootstrap = new ServerBootstrap(new OioServerSocketChannelFactory(executor, executor));
         serverBootstrap.setPipelineFactory(factory);
         serverBootstrap.setOption("reuseAddress", true);

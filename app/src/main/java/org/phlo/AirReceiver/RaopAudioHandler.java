@@ -20,7 +20,6 @@ package org.phlo.AirReceiver;
 import java.net.*;
 import java.nio.charset.*;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.*;
@@ -85,9 +84,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	/**
 	 * Executor service used for the RTP channels
 	 */
-	private final ExecutorService m_executorService;
 	private final ExecutionHandler m_executionHandler;
-
 	private final ChannelHandler m_exceptionLoggingHandler = new ExceptionLoggingHandler();
 	private final ChannelHandler m_decodeHandler = new RaopRtpDecodeHandler();
 	private final ChannelHandler m_encodeHandler = new RtpEncodeHandler();
@@ -110,11 +107,9 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 
 	/**
 	 * Creates an instance, using the ExecutorService for the RTP channel's datagram socket factory
-	 * @param executorService
 	 * @param executionHandler
 	 */
-	public RaopAudioHandler(final ExecutorService executorService, ExecutionHandler executionHandler, int audioStream, AudioChannel channelMode) {
-		m_executorService = executorService;
+	public RaopAudioHandler(ExecutionHandler executionHandler, int audioStream, AudioChannel channelMode) {
 		m_executionHandler = executionHandler;
 		m_audioStream = audioStream;
 		m_channelMode = channelMode;
@@ -601,7 +596,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		/* Create bootstrap helper for a data-gram socket using OIO,
 		 * default is NIO which not work <= Android 5.1 ???
 		 */
-		final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_executorService));
+		final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_executionHandler.getExecutor()));
 
 		/* Set the buffer size predictor to 1500 bytes to ensure that
 		 * received packets will fit into the buffer. Packets are
