@@ -28,13 +28,13 @@ import org.jboss.netty.channel.*;
  * and uses the information to re-sync the audio output queue upon receiving a
  * sync packet.
  */
-public class RaopRtpTimingHandler extends SimpleChannelHandler {
+public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 	private static Logger s_logger = Logger.getLogger("RaopRtpTimingHandler");
 
 	/**
-	 * Number of seconds between {@link RaopRtpPacket.TimingRequest}s.
+	 * Number of milliseconds between {@link RaopRtpPacket.TimingRequest}s.
 	 */
-	public static final double TimeRequestInterval = 3;
+	public static final long TimeRequestInterval = 3000;
 
 	/**
 	 * Thread which sends out {@link RaopRtpPacket.TimingRequest}s.
@@ -56,7 +56,7 @@ public class RaopRtpTimingHandler extends SimpleChannelHandler {
 
 				m_channel.write(timingRequestPacket);
 				try {
-					Thread.sleep(Math.round(TimeRequestInterval * 1000));
+					Thread.sleep(TimeRequestInterval);
 				}
 				catch (final InterruptedException e) {
 					Thread.currentThread().interrupt();
@@ -129,10 +129,11 @@ public class RaopRtpTimingHandler extends SimpleChannelHandler {
 	public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt)
 		throws Exception
 	{
-		if (evt.getMessage() instanceof RaopRtpPacket.Sync)
-			syncReceived((RaopRtpPacket.Sync)evt.getMessage());
-		else if (evt.getMessage() instanceof RaopRtpPacket.TimingResponse)
-			timingResponseReceived((RaopRtpPacket.TimingResponse)evt.getMessage());
+		final Object message = evt.getMessage();
+		if (message instanceof RaopRtpPacket.Sync)
+			syncReceived((RaopRtpPacket.Sync) message);
+		else if (message instanceof RaopRtpPacket.TimingResponse)
+			timingResponseReceived((RaopRtpPacket.TimingResponse) message);
 
 		super.messageReceived(ctx, evt);
 	}

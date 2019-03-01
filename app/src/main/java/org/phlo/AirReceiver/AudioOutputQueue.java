@@ -491,7 +491,7 @@ public class AudioOutputQueue implements AudioClock {
 		final long frameTimeOffsetPrevious = m_frameTimeOffset;
 		m_frameTimeOffset = frameTime - lineTime;
 
-		s_logger.info("Frame time adjusted by " + (m_frameTimeOffset - frameTimeOffsetPrevious) + " based on timing information " + ageSeconds + " seconds old and " + (m_latestSeenFrameTime - frameTime) + " frames before latest seen frame time");
+		s_logger.info("Time adjusted " + (m_frameTimeOffset - frameTimeOffsetPrevious) + " based on " + ageSeconds + " seconds old and " + (m_latestSeenFrameTime - frameTime) + " frames");
 	}
 
 	@Override
