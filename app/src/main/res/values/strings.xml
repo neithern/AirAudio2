@@ -5,7 +5,7 @@
     <string name="channel_only_left">Only left</string>
     <string name="channel_only_right">Only right</string>
     <string name="play_self">Self</string>
-    <string name="play_together">Play sync together</string>
+    <string name="play_together">Play together</string>
     <string name="server_name">Server name</string>
     <string name="stream_type">Audio stream type</string>
     <string name="stream_music">Music</string>

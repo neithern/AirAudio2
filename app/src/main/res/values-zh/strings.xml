@@ -5,7 +5,7 @@
     <string name="channel_only_left">仅播放左声道</string>
     <string name="channel_only_right">仅播放右声道</string>
     <string name="play_self">本机</string>
-    <string name="play_together">多设备同步播放</string>
+    <string name="play_together">一起播放</string>
     <string name="server_name">服务名称</string>
     <string name="stream_type">音频播放流类型</string>
     <string name="stream_music">音乐</string>
