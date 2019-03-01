@@ -1,3 +1,20 @@
+/*
+ * This file is part of AirReceiver.
+ *
+ * AirReceiver is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+
+ * AirReceiver is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+
+ * You should have received a copy of the GNU General Public License
+ * along with AirReceiver.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package com.github.neithern.airaudio;
 
 import android.app.Service;
@@ -5,6 +22,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioManager;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -13,8 +31,9 @@ import android.preference.PreferenceManager;
 
 import org.phlo.AirReceiver.AudioChannel;
 
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Set;
 
 public class AirAudioService extends Service {
     public static final String BROADCAST_SERVER_STATE = "SERVER_STATE";
@@ -22,8 +41,7 @@ public class AirAudioService extends Service {
     public static final String EXTRA_NAME = "name";
     public static final String EXTRA_CHANNEL_MODE = "channel";
     public static final String EXTRA_OUTPUT_STREAM = "output";
-
-    private static final int RTSP_PORT = 46343;
+    public static final String EXTRA_FORWARD_SERVERS = "servers";
 
     public static final int STREAM_TTS = 9; // AudioManager.STREAM_TTS
 
@@ -33,8 +51,6 @@ public class AirAudioService extends Service {
             intent.putExtras(extras);
         context.startService(intent);
     }
-
-    private static final Executor executor = Executors.newSingleThreadExecutor();
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -57,8 +73,9 @@ public class AirAudioService extends Service {
         final String name = getName(extras, pref);
         final int streamType = getStreamType(extras, pref);
         final AudioChannel channelMode = getChannelMode(extras, pref);
+        final InetSocketAddress[] forwardServers = getForwardServers(pref);
         final boolean shutDown = Intent.ACTION_SHUTDOWN.equals(action);
-        executor.execute(new Runnable() {
+        AsyncTask.execute(new Runnable() {
             @Override
             public void run() {
                 final AirAudioServer server = AirAudioServer.instance();
@@ -66,7 +83,7 @@ public class AirAudioService extends Service {
                     server.stop();
                 }
                 if (!shutDown && !server.isRunning()) {
-                    server.start(name, RTSP_PORT, streamType, channelMode);
+                    server.start(name, streamType, channelMode, forwardServers);
                 }
                 Intent result = new Intent(BROADCAST_SERVER_STATE);
                 result.putExtra(EXTRA_NAME, name);
@@ -128,5 +145,19 @@ public class AirAudioService extends Service {
             pref.edit().putInt(EXTRA_OUTPUT_STREAM, streamType).apply();
         }
         return streamType;
+    }
+
+    public static InetSocketAddress[] getForwardServers(SharedPreferences pref) {
+        final Set<String> servers = pref.getStringSet(EXTRA_FORWARD_SERVERS, null);
+        if (servers == null || servers.isEmpty())
+            return null;
+
+        ArrayList<InetSocketAddress> addresses = new ArrayList<>(servers.size());
+        for (String addr : servers) {
+            InetSocketAddress address = AirAudioServer.parseAddress(addr);
+            if (address != null)
+                addresses.add(address);
+        }
+        return addresses.toArray(new InetSocketAddress[0]);
     }
 }

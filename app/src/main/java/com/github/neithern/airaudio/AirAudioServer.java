@@ -1,11 +1,31 @@
+/*
+ * This file is part of AirReceiver.
+ *
+ * AirReceiver is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+
+ * AirReceiver is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+
+ * You should have received a copy of the GNU General Public License
+ * along with AirReceiver.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package com.github.neithern.airaudio;
 
 import android.util.Log;
+
+import com.github.neithern.airproxy.ProxyRtspPipelineFactory;
 
 import org.jboss.netty.bootstrap.ServerBootstrap;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandler;
 import org.jboss.netty.channel.ChannelHandlerContext;
+import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.channel.group.ChannelGroup;
@@ -36,9 +56,12 @@ import javax.jmdns.ServiceInfo;
 public class AirAudioServer {
     private static final String TAG = "AirAudioServer";
 
-    private static final String AIR_TUNES_SERVICE_TYPE = "_raop._tcp.local.";
+    private static final int PRIVATE_PORT = 46342;
+    public static final int RTSP_PORT = 46343;
 
-    private static final Map<String, String> AIRTUNES_SERVICE_PROPERTIES = map(
+    public static final String AIRPLAY_SERVICE_TYPE = "_raop._tcp.local.";
+
+    private static final Map<String, String> AIRPLAY_SERVICE_PROPERTIES = map(
             "txtvers", "1",
             "tp", "UDP",
             "ch", "2",
@@ -68,7 +91,7 @@ public class AirAudioServer {
 
     private final ChannelHandler closeHandler = new SimpleChannelUpstreamHandler() {
         @Override
-        public void channelOpen (ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
+        public void channelOpen(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
             channelGroup.add(e.getChannel());
             super.channelOpen(ctx, e);
         }
@@ -80,7 +103,7 @@ public class AirAudioServer {
         return running;
     }
 
-    public boolean start(String displayName, int rtspPort, int audioStream, AudioChannel channelMode) {
+    public boolean start(String displayName, int audioStream, AudioChannel channelMode, InetSocketAddress[] forwardServers) {
         Enumeration<NetworkInterface> eni = null;
         try {
             eni = NetworkInterface.getNetworkInterfaces();
@@ -89,23 +112,24 @@ public class AirAudioServer {
             return false;
         }
 
-        /* Create AirTunes RTSP server */
-        RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(
-                audioStream, channelMode,
-                executionHandler, hardwareAddresses, closeHandler);
-        ServerBootstrap serverBootstrap = new ServerBootstrap(new OioServerSocketChannelFactory(executor, executor));
-        serverBootstrap.setPipelineFactory(factory);
-        serverBootstrap.setOption("reuseAddress", true);
-        serverBootstrap.setOption("child.tcpNoDelay", true);
-        serverBootstrap.setOption("child.keepAlive", true);
-
-        try {
-            Channel channel = serverBootstrap.bind(new InetSocketAddress(InetAddress.getByName("0.0.0.0"), rtspPort));
-            rtspPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
-            channelGroup.add(channel);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to bind RTSP server on port: " + rtspPort, e);
+        int count = forwardServers != null ? forwardServers.length : 0;
+        Channel channel = createPlayerServer(audioStream, channelMode, count > 0 ? PRIVATE_PORT : RTSP_PORT);
+        if (channel == null)
             return false;
+
+        int rtspPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
+        if (count > 0) {
+            InetSocketAddress[] remotes = Arrays.copyOf(forwardServers, ++count);
+            remotes[count - 1] = new InetSocketAddress("127.0.0.1", rtspPort);
+
+            Channel proxyChannel = createProxyServer(remotes, RTSP_PORT);
+            if (proxyChannel == null) {
+                closeChannels();
+                return false;
+            }
+            /* Publish only proxy server */
+            channel = proxyChannel;
+            rtspPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
         }
 
         running = false;
@@ -116,7 +140,7 @@ public class AirAudioServer {
                 if (ni.isLoopback() || ni.isPointToPoint() || !ni.isUp())
                     continue;
                 hwAddr = Arrays.copyOfRange(ni.getHardwareAddress(), 0, 6);
-            } catch (Exception e) {
+            } catch (Exception ignored) {
                 continue;
             }
 
@@ -132,14 +156,14 @@ public class AirAudioServer {
 
                     /* Publish RAOP service */
                     ServiceInfo serviceInfo = ServiceInfo.create(
-                            AIR_TUNES_SERVICE_TYPE,
+                            AIRPLAY_SERVICE_TYPE,
                             toHexString(hwAddr) + "@" + displayName, rtspPort,
                             0 /* weight */, 0 /* priority */,
-                            AIRTUNES_SERVICE_PROPERTIES
+                            AIRPLAY_SERVICE_PROPERTIES
                     );
                     jmDNS.registerService(serviceInfo);
-                    running = true;
                     Log.d(TAG, "Registered AirTunes server " + serviceInfo.getName() + " on " + addr + ':' + rtspPort);
+                    running = true;
                 } catch (Exception e) {
                     Log.e(TAG, "Register AirTunes server failed on " + addr + addr + ':' + rtspPort, e);
                 }
@@ -154,19 +178,40 @@ public class AirAudioServer {
             closeSilently(jmDNS);
         jmDNSInstances.clear();
 
-        /* Close channels */
-        final ChannelGroupFuture allChannelsClosed = channelGroup.close();
-        /* Wait for all channels to finish closing */
-        allChannelsClosed.awaitUninterruptibly();
+        closeChannels();
         running = false;
     }
 
-    private static void closeSilently(Closeable c) {
+    private void closeChannels() {
+        final ChannelGroupFuture future = channelGroup.close();
+        future.awaitUninterruptibly();
+        channelGroup.clear();
+    }
+
+    private Channel createPlayerServer(int audioStream, AudioChannel channelMode, int port) {
+        RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(audioStream, channelMode,
+                executionHandler, hardwareAddresses, closeHandler);
+        return crateServer(factory, port);
+    }
+
+    private Channel createProxyServer(InetSocketAddress[] forwardServers, int port) {
+        ProxyRtspPipelineFactory factory = new ProxyRtspPipelineFactory(forwardServers,
+                executionHandler, hardwareAddresses, closeHandler);
+        return crateServer(factory, port);
+    }
+
+    private Channel crateServer(ChannelPipelineFactory factory, int port) {
+        ServerBootstrap bootstrap = new ServerBootstrap(new OioServerSocketChannelFactory(executor, executor));
+        bootstrap.setPipelineFactory(factory);
+        bootstrap.setOption("reuseAddress", true);
+        bootstrap.setOption("child.keepAlive", true);
         try {
-            if (c != null)
-                c.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+            Channel channel = bootstrap.bind(new InetSocketAddress("0.0.0.0", port));
+            channelGroup.add(channel);
+            return channel;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to bind RTSP server on port: " + port, e);
+            return null;
         }
     }
 
@@ -179,10 +224,32 @@ public class AirAudioServer {
 
     private static String toHexString(final byte[] bytes) {
         final StringBuilder s = new StringBuilder();
-        for (byte b: bytes) {
+        for (byte b : bytes) {
             String h = Integer.toHexString(0x100 | b);
             s.append(h.substring(h.length() - 2).toUpperCase());
         }
         return s.toString();
+    }
+
+    public static void closeSilently(Closeable c) {
+        try {
+            if (c != null)
+                c.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Parse address like: 127.0.0.1:80
+     */
+    public static InetSocketAddress parseAddress(String addressAndPort) {
+        try {
+            String[] parts = addressAndPort.split(":");
+            return new InetSocketAddress(parts[0], Integer.valueOf(parts[1]));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

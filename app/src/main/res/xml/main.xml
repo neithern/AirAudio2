@@ -19,4 +19,8 @@
         android:entries="@array/channel_mode_titles"
         android:entryValues="@array/channel_mode_values" />
 
+    <MultiSelectListPreference
+        android:key="servers"
+        android:title="@string/play_together" />
+
 </PreferenceScreen>
