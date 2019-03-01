@@ -175,21 +175,11 @@ public class MainActivity extends PreferenceActivity {
     private void updateServerNames(Set<String> addresses) {
         StringBuilder builder = new StringBuilder(getString(R.string.play_self));
         if (addresses != null) {
-            String[] list = addresses.toArray(new String[0]);
-            boolean changed = false;
-            for (String addr : list) {
+            for (String addr : addresses) {
                 CharSequence name = lookupName(addr);
-                if (name != null) {
-                    builder.append(", ");
-                    builder.append(name);
-                } else {
-                    addresses.remove(addr);
-                    changed = true;
-                }
+                builder.append(", ");
+                builder.append(name != null ? name : addr);
             }
-            if (changed)
-                PreferenceManager.getDefaultSharedPreferences(this).edit()
-                        .putStringSet(AirAudioService.EXTRA_FORWARD_SERVERS, addresses).apply();
         }
         prefServers.setSummary(builder.toString());
     }
