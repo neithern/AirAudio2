@@ -46,7 +46,7 @@ public class RaopRtspOptionsHandler extends SimpleChannelUpstreamHandler {
 
 		if (RtspMethods.OPTIONS.equals(req.getMethod())) {
 	        final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0, RtspResponseStatuses.OK);
-	        response.setHeader(RtspHeaders.Names.PUBLIC, Options);
+	        response.headers().add(RtspHeaders.Names.PUBLIC, Options);
 			ctx.getChannel().write(response);
 		}
 		else {

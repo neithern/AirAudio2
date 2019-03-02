@@ -292,10 +292,11 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		throws Exception
 	{
 		/* ANNOUNCE must contain stream information in SDP format */
-		if (!req.containsHeader("Content-Type"))
+		if (!req.headers().contains("Content-Type"))
 			throw new ProtocolException("No Content-Type header");
-		if (!"application/sdp".equals(req.getHeader("Content-Type")))
-			throw new ProtocolException("Invalid Content-Type header, expected application/sdp but got " + req.getHeader("Content-Type"));
+		final String contentType = req.headers().get("Content-Type");
+		if (!"application/sdp".equals(contentType))
+			throw new ProtocolException("Invalid Content-Type header, expected application/sdp but got " + contentType);
 
 		reset();
 		createRtspClients();
@@ -405,11 +406,11 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		throws ProtocolException
 	{
 		/* Request must contain a Transport header */
-		if (!req.containsHeader(HeaderTransport))
+		if (!req.headers().contains(HeaderTransport))
 			throw new ProtocolException("No Transport header");
 
 		/* Split Transport header into individual options and prepare reponse options list */
-		final Deque<String> requestOptions = new LinkedList<String>(Arrays.asList(req.getHeader(HeaderTransport).split(";")));
+		final Deque<String> requestOptions = new LinkedList<String>(Arrays.asList(req.headers().get(HeaderTransport).split(";")));
 		final List<String> responseOptions = new LinkedList<String>();
 
 		/* Transport header. Protocol must be RTP/AVP/UDP */
@@ -487,8 +488,8 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 
 		/* Send response */
 		final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0,  RtspResponseStatuses.OK);
-		response.addHeader(HeaderTransport, Utils.buildTransportOptions(responseOptions));
-		response.addHeader(HeaderSession, "DEADBEEEF");
+		response.headers().add(HeaderTransport, Utils.buildTransportOptions(responseOptions));
+		response.headers().add(HeaderSession, "DEADBEEEF");
 		ctxChannel.write(response);
 	}
 

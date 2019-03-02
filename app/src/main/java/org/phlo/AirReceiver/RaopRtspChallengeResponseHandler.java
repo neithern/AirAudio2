@@ -51,9 +51,9 @@ public class RaopRtspChallengeResponseHandler extends SimpleChannelHandler
 		final HttpRequest req = (HttpRequest)evt.getMessage();
 
 		synchronized(this) {
-			if (req.containsHeader(HeaderChallenge)) {
+			if (req.headers().contains(HeaderChallenge)) {
 				/* The challenge is sent without padding! */
-				final byte[] challenge = Base64.decodeUnpadded(req.getHeader(HeaderChallenge));
+				final byte[] challenge = Base64.decodeUnpadded(req.headers().get(HeaderChallenge));
 
 				/* Verify that we got 16 bytes */
 				if (challenge.length != 16)
@@ -89,7 +89,7 @@ public class RaopRtspChallengeResponseHandler extends SimpleChannelHandler
 					 */
 					final String sig = Base64.encodePadded(getSignature());
 
-					resp.setHeader(HeaderSignature, sig);
+					resp.headers().add(HeaderSignature, sig);
 				}
 				finally {
 					/* Forget last challenge */

@@ -55,7 +55,7 @@ public class RtspLoggingHandler extends SimpleChannelHandler
 			s.append(" ");
 			s.append(req.getUri());
 			s.append("\n");
-			for(final Map.Entry<String, String> header: req.getHeaders()) {
+			for(final Map.Entry<String, String> header: req.headers()) {
 				s.append("  ");
 				s.append(header.getKey());
 				s.append(": ");
@@ -83,7 +83,7 @@ public class RtspLoggingHandler extends SimpleChannelHandler
 			s.append(" ");
 			s.append(resp.getStatus().getReasonPhrase());
 			s.append("\n");
-			for(final Map.Entry<String, String> header: resp.getHeaders()) {
+			for(final Map.Entry<String, String> header: resp.headers()) {
 				s.append("  ");
 				s.append(header.getKey());
 				s.append(": ");

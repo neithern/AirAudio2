@@ -47,7 +47,6 @@ import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 
@@ -124,11 +123,8 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
 
     public ChannelFuture sendRequest(HttpRequest request) {
         if (RaopRtspMethods.SETUP.equals(request.getMethod())) {
-            final DefaultHttpRequest newReq = new DefaultHttpRequest(
-                    request.getProtocolVersion(), request.getMethod(), request.getUri());
-            for (Map.Entry<String, String> entry : request.getHeaders())
-                newReq.setHeader(entry.getKey(), entry.getValue());
-            final String[] options = newReq.getHeader(ProxyServerHandler.HeaderTransport).split(";");
+            final HttpRequest newReq = copyRequest(request);
+            final String[] options = newReq.headers().get(ProxyServerHandler.HeaderTransport).split(";");
             for (int i = 0; i < options.length; i++) {
                 final String opt = options[i];
                 final Matcher matcher = ProxyServerHandler.s_pattern_transportOption.matcher(opt);
@@ -140,7 +136,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
                 else if ("timing_port".equals(key))
                     options[i] = key + '=' + Integer.toString(RTP_TIMING_PORT);
             }
-            newReq.setHeader(ProxyServerHandler.HeaderTransport, Utils.buildTransportOptions(Arrays.asList(options)));
+            newReq.headers().set(ProxyServerHandler.HeaderTransport, Utils.buildTransportOptions(Arrays.asList(options)));
             request = newReq;
         }
         s_logger.fine("request to " + m_remoteAddress + ": " + request);
@@ -172,7 +168,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
                     final HttpResponse response = (HttpResponse) msg;
                     s_logger.info("response from " + m_remoteAddress + ": " + msg);
                     if (RtspResponseStatuses.OK.equals(response.getStatus())
-                            && response.containsHeader(ProxyServerHandler.HeaderTransport))
+                            && response.headers().contains(ProxyServerHandler.HeaderTransport))
                         onSetupResponseReceived(ctx, response);
                 }
             }
@@ -182,7 +178,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
 
     private void onSetupResponseReceived(ChannelHandlerContext ctx, HttpResponse response) throws Exception {
         final InetSocketAddress localAddress = (InetSocketAddress) ctx.getChannel().getLocalAddress();
-        final String[] options = response.getHeader(ProxyServerHandler.HeaderTransport).split(";");
+        final String[] options = response.headers().get(ProxyServerHandler.HeaderTransport).split(";");
         for (String opt : options) {
             final Matcher matcher = ProxyServerHandler.s_pattern_transportOption.matcher(opt);
             if (!matcher.matches())
@@ -248,5 +244,12 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             }
             super.messageReceived(ctx, evt);
         }
+    }
+
+    private static HttpRequest copyRequest(HttpRequest req) {
+        final HttpRequest newReq = new DefaultHttpRequest(req.getProtocolVersion(), req.getMethod(), req.getUri());
+        newReq.headers().add(req.headers());
+        newReq.setContent(req.getContent());
+        return newReq;
     }
 }

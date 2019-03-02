@@ -32,9 +32,9 @@ android {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'org.jmdns:jmdns:3.5.5'
-    implementation 'org.jboss.netty:netty:3.2.10.Final'
+    implementation 'io.netty:netty:3.10.6.Final'
     implementation 'net.iharder:base64:2.3.9'
+    implementation 'org.jmdns:jmdns:3.5.5'
 
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'com.android.support.test:runner:1.0.2'
