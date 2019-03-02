@@ -141,7 +141,9 @@ public class MainActivity extends PreferenceActivity {
         filter.addAction(AirAudioService.BROADCAST_SERVER_STATE);
         registerReceiver(receiver, filter);
 
-        if (!AirAudioServer.instance().isRunning())
+        if (AirAudioServer.instance().isRunning())
+            serverSwitch.setChecked(true);
+        else
             AirAudioService.start(this, extras);
     }
 
