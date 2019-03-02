@@ -220,7 +220,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	 */
 	private static Pattern s_pattern_sdp_a_rtpmap = Pattern.compile("^([0-9]+) (.*)$");
 
-	private static Charset s_utf8_charset = Charset.forName("UTF-8");
+	private static Charset s_ascii_charset = Charset.forName("ASCII");
 
 	/**
 	 * Handles ANNOUNCE requests and creates an {@link AudioOutputQueue} and
@@ -244,7 +244,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		reset();
 
 		/* Get SDP stream information */
-		final String dsp = req.getContent().toString(s_utf8_charset).replace("\r", "");
+		final String dsp = req.getContent().toString(s_ascii_charset).replace("\r", "");
 
 		SecretKey aesKey = null;
 		IvParameterSpec aesIv = null;
@@ -526,24 +526,17 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	/**
 	 * Handle SET_PARAMETER request. Currently only {@code volume} is supported
 	 */
-	public synchronized void setParameterReceived(final ChannelHandlerContext ctx, final HttpRequest req)
-		throws ProtocolException
-	{
+	public synchronized void setParameterReceived(final ChannelHandlerContext ctx, final HttpRequest req) {
 		/* Body in ASCII encoding with unix newlines */
-		final String body = req.getContent().toString(s_utf8_charset).replace("\r", "");
+		final String body = req.getContent().toString(s_ascii_charset).replace("\r", "");
 
 		/* Handle parameters */
 		for (final String line: body.split("\n")) {
-			try {
-				/* Split parameter into name and value */
-				final Matcher m_parameter = s_pattern_parameter.matcher(line);
-				if (!m_parameter.matches())
-					throw new ProtocolException("Cannot parse line " + line);
-
+			/* Split parameter into name and value */
+			final Matcher m_parameter = s_pattern_parameter.matcher(line);
+			if (m_parameter.matches()) {
 				final String name = m_parameter.group(1);
 				final String value = m_parameter.group(2);
-				s_logger.info("RTSP parameter received: " + name + " = " + value);
-
 				if ("volume".equals(name)) {
 					/* Set output gain */
 					AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
@@ -552,9 +545,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 						audioOutputQueue.setGain(AudioVolume.fromAirTunes(volume));
 					}
 				}
-			}
-			catch (final Throwable e) {
-				throw new ProtocolException("Unable to parse line " + line);
+				s_logger.info("RTSP parameter received: " + name + " = " + value);
 			}
 		}
 
@@ -565,9 +556,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	/**
 	 * Handle GET_PARAMETER request. Currently only {@code volume} is supported
 	 */
-	public synchronized void getParameterReceived(final ChannelHandlerContext ctx, final HttpRequest req)
-		throws ProtocolException
-	{
+	public synchronized void getParameterReceived(final ChannelHandlerContext ctx, final HttpRequest req) {
 		final StringBuilder body = new StringBuilder();
 
 		AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
@@ -579,7 +568,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		}
 
 		final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0,  RtspResponseStatuses.OK);
-		response.setContent(ChannelBuffers.wrappedBuffer(body.toString().getBytes(s_utf8_charset)));
+		response.setContent(ChannelBuffers.wrappedBuffer(body.toString().getBytes(s_ascii_charset)));
 		ctx.getChannel().write(response);
 	}
 

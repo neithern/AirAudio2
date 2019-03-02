@@ -275,7 +275,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	 */
 	private static Pattern s_pattern_sdp_a_rtpmap = Pattern.compile("^([0-9]+) (.*)$");
 
-	private static Charset s_utf8_charset = Charset.forName("UTF-8");
+	private static Charset s_ascii_charset = Charset.forName("ASCII");
 
 	/**
 	 * Handles ANNOUNCE requests and creates an {@link AudioOutputQueue} and
@@ -300,7 +300,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		createRtspClients();
 
 		/* Get SDP stream information */
-		final String dsp = req.getContent().toString(s_utf8_charset).replace("\r", "");
+		final String dsp = req.getContent().toString(s_ascii_charset).replace("\r", "");
 
 		SecretKey aesKey = null;
 		IvParameterSpec aesIv = null;
@@ -548,7 +548,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	 */
 	public synchronized void setParameterReceived(final ChannelHandlerContext ctx, final HttpRequest req) {
 		/* Body in ASCII encoding with unix newlines */
-		final String body = req.getContent().toString(s_utf8_charset).replace("\r", "");
+		final String body = req.getContent().toString(s_ascii_charset).replace("\r", "");
 
 		/* Handle parameters */
 		for (final String line: body.split("\n")) {
