@@ -36,6 +36,7 @@ import org.jboss.netty.handler.codec.http.HttpRequest;
 import org.jboss.netty.handler.codec.http.HttpResponse;
 import org.jboss.netty.handler.codec.rtsp.RtspRequestEncoder;
 import org.jboss.netty.handler.codec.rtsp.RtspResponseDecoder;
+import org.jboss.netty.handler.codec.rtsp.RtspResponseStatuses;
 import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.phlo.AirReceiver.ExceptionLoggingHandler;
 import org.phlo.AirReceiver.RaopRtpDecodeHandler;
@@ -77,7 +78,10 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
         m_remoteAddress = remoteAddress;
 
         final ClientBootstrap bootstrap = new ClientBootstrap(new OioClientSocketChannelFactory(m_executionHandler.getExecutor()));
+        bootstrap.setOption("tcpNoDelay", true);
         bootstrap.setOption("keepAlive", true);
+        bootstrap.setOption("sendBufferSize", 65536);
+        bootstrap.setOption("receiveBufferSize", 65536);
         bootstrap.setPipelineFactory(this);
 
         ChannelFuture future = bootstrap.connect(remoteAddress);
@@ -166,7 +170,8 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
                 if (msg instanceof HttpResponse) {
                     final HttpResponse response = (HttpResponse) msg;
                     s_logger.info("response from " + m_remoteAddress + ": " + msg);
-                    if (response.containsHeader(ProxyServerHandler.HeaderTransport))
+                    if (RtspResponseStatuses.OK.equals(response.getStatus())
+                            && response.containsHeader(ProxyServerHandler.HeaderTransport))
                         onSetupResponseReceived(ctx, response);
                 }
             }
@@ -199,7 +204,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     private Channel createRtpChannel(InetSocketAddress localAddr, int localPort, int remotePort) throws Exception {
         final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_executionHandler.getExecutor()));
         bootstrap.setOption("receiveBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(1500));
-        bootstrap.setOption("receiveBufferSize", 1024*1024);
+        bootstrap.setOption("receiveBufferSize", 1048576);
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
             @Override
             public ChannelPipeline getPipeline() throws Exception {
@@ -220,25 +225,27 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
         return channel;
     }
 
-    private class RtpReceiverHandler extends SimpleChannelUpstreamHandler {
-        @Override
-        public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt) throws Exception {
-            final Object message = evt.getMessage();
-            if (message instanceof RaopRtpPacket.RetransmitRequest) {
-                writeMessage(m_upRtpControlChannel, message);
-            } else if (message instanceof RaopRtpPacket.TimingRequest) {
-                writeMessage(m_upRtpTimingChannel, message);
-            }
-            super.messageReceived(ctx, evt);
-        }
-    }
-
     private ChannelFuture writeMessage(Channel channel, Object message) {
         try {
             return channel != null ? channel.write(message) : null;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             s_logger.warning("write message failed for: " + m_remoteAddress + ", " + e);
+            throw e;
         }
-        return null;
+    }
+
+    private class RtpReceiverHandler extends SimpleChannelUpstreamHandler {
+        @Override
+        public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt) throws Exception {
+            synchronized (this) {
+                final Object message = evt.getMessage();
+                if (message instanceof RaopRtpPacket.RetransmitRequest) {
+                    writeMessage(m_upRtpControlChannel, message);
+                } else if (message instanceof RaopRtpPacket.TimingRequest) {
+                    writeMessage(m_upRtpTimingChannel, message);
+                }
+            }
+            super.messageReceived(ctx, evt);
+        }
     }
 }
