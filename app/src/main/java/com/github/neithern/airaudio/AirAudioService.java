@@ -33,6 +33,8 @@ import org.phlo.AirReceiver.AudioChannel;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 
 public class AirAudioService extends Service {
@@ -73,7 +75,7 @@ public class AirAudioService extends Service {
         final String name = getName(extras, pref);
         final int streamType = getStreamType(extras, pref);
         final AudioChannel channelMode = getChannelMode(extras, pref);
-        final InetSocketAddress[] forwardServers = getForwardServers(pref);
+        final InetSocketAddress[] forwardServers = getForwardServers(extras, pref);
         final boolean shutDown = Intent.ACTION_SHUTDOWN.equals(action);
         AsyncTask.execute(new Runnable() {
             @Override
@@ -147,8 +149,15 @@ public class AirAudioService extends Service {
         return streamType;
     }
 
-    public static InetSocketAddress[] getForwardServers(SharedPreferences pref) {
-        final Set<String> servers = pref.getStringSet(EXTRA_FORWARD_SERVERS, null);
+    public static InetSocketAddress[] getForwardServers(Bundle extras, SharedPreferences pref) {
+        final Set<String> servers;
+        final String[] list = extras != null ? extras.getStringArray(EXTRA_FORWARD_SERVERS) : null;
+        if (list != null && list.length > 0) {
+            servers = new HashSet<>(Arrays.asList(list));
+            pref.edit().putStringSet(EXTRA_FORWARD_SERVERS, servers).apply();
+        } else {
+            servers = pref.getStringSet(EXTRA_FORWARD_SERVERS, null);
+        }
         if (servers == null || servers.isEmpty())
             return null;
 
