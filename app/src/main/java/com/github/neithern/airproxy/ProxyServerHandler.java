@@ -51,6 +51,7 @@ import org.phlo.AirReceiver.RaopRtpRetransmitRequestHandler;
 import org.phlo.AirReceiver.RaopRtpTimingHandler;
 import org.phlo.AirReceiver.RaopRtspMethods;
 import org.phlo.AirReceiver.RtpEncodeHandler;
+import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -446,8 +447,8 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 				/* Port number of the client's control socket. Response includes port number of *our* control port */
 				final int clientControlPort = Integer.valueOf(value);
 				final Channel channel = createRtpChannel(
-					substitutePort(localAddress, RTP_CONTROL_PORT),
-					substitutePort(remoteAddress, clientControlPort),
+					Utils.substitutePort(localAddress, RTP_CONTROL_PORT),
+					Utils.substitutePort(remoteAddress, clientControlPort),
 					RaopRtpChannelType.Control
 				);
 				m_serverRtpControlChannel = channel;
@@ -458,8 +459,8 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 				/* Port number of the client's timing socket. Response includes port number of *our* timing port */
 				final int clientTimingPort = Integer.valueOf(value);
 				final Channel channel = createRtpChannel(
-					substitutePort(localAddress, RTP_TIMING_PORT),
-					substitutePort(remoteAddress, clientTimingPort),
+					Utils.substitutePort(localAddress, RTP_TIMING_PORT),
+					Utils.substitutePort(remoteAddress, clientTimingPort),
 					RaopRtpChannelType.Timing
 				);
 				m_serverRtpTimingChannel = channel;
@@ -474,7 +475,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 
 		/* Create audio socket and include it's port in our response */
 		final Channel channel = createRtpChannel(
-			substitutePort(localAddress, RTP_AUDIO_PORT),
+			Utils.substitutePort(localAddress, RTP_AUDIO_PORT),
 			null,
 			RaopRtpChannelType.Audio
 		);
@@ -486,7 +487,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 
 		/* Send response */
 		final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0,  RtspResponseStatuses.OK);
-		response.addHeader(HeaderTransport, buildTransportOptions(responseOptions));
+		response.addHeader(HeaderTransport, Utils.buildTransportOptions(responseOptions));
 		response.addHeader(HeaderSession, "DEADBEEEF");
 		ctxChannel.write(response);
 	}
@@ -620,27 +621,5 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 			m_serverRtpChannels.add(channel);
 		}
 		return channel;
-	}
-
-	protected static String buildTransportOptions(List<String> options) {
-		final StringBuilder builder = new StringBuilder();
-		for (String opt: options) {
-			if (builder.length() > 0)
-				builder.append(";");
-			builder.append(opt);
-		}
-		return builder.toString();
-	}
-
-	/**
-	 * Modifies the port component of an {@link InetSocketAddress} while
-	 * leaving the other parts unmodified.
-	 * 
-	 * @param address socket address
-	 * @param port new port
-	 * @return socket address with port substitued
-	 */
-	protected static InetSocketAddress substitutePort(final InetSocketAddress address, final int port) {
-		return new InetSocketAddress(address.getAddress(), port);
 	}
 }

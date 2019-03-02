@@ -43,6 +43,7 @@ import org.phlo.AirReceiver.RaopRtpDecodeHandler;
 import org.phlo.AirReceiver.RaopRtpPacket;
 import org.phlo.AirReceiver.RaopRtspMethods;
 import org.phlo.AirReceiver.RtpEncodeHandler;
+import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
@@ -139,7 +140,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
                 else if ("timing_port".equals(key))
                     options[i] = key + '=' + Integer.toString(RTP_TIMING_PORT);
             }
-            newReq.setHeader(ProxyServerHandler.HeaderTransport, ProxyServerHandler.buildTransportOptions(Arrays.asList(options)));
+            newReq.setHeader(ProxyServerHandler.HeaderTransport, Utils.buildTransportOptions(Arrays.asList(options)));
             request = newReq;
         }
         s_logger.fine("request to " + m_remoteAddress + ": " + request);
@@ -218,9 +219,9 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             }
         });
 
-        Channel channel = bootstrap.bind(ProxyServerHandler.substitutePort(localAddr, localPort));
+        Channel channel = bootstrap.bind(Utils.substitutePort(localAddr, localPort));
 
-        final InetSocketAddress remoteAddress = ProxyServerHandler.substitutePort(m_remoteAddress, remotePort);
+        final InetSocketAddress remoteAddress = Utils.substitutePort(m_remoteAddress, remotePort);
         channel.connect(remoteAddress);
         return channel;
     }
