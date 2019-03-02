@@ -141,7 +141,8 @@ public class MainActivity extends PreferenceActivity {
         filter.addAction(AirAudioService.BROADCAST_SERVER_STATE);
         registerReceiver(receiver, filter);
 
-        AirAudioService.start(this, extras);
+        if (!AirAudioServer.instance().isRunning())
+            AirAudioService.start(this, extras);
     }
 
     @Override
