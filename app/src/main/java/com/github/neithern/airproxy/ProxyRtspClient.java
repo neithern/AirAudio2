@@ -29,6 +29,8 @@ import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.FixedReceiveBufferSizePredictorFactory;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
+import org.jboss.netty.channel.group.ChannelGroup;
+import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.oio.OioClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.oio.OioDatagramChannelFactory;
 import org.jboss.netty.handler.codec.http.DefaultHttpRequest;
@@ -63,6 +65,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     private final ChannelHandler m_rtpDecoder = new RaopRtpDecodeHandler();
     private final ChannelHandler m_rtpEncoder = new RtpEncodeHandler();
 
+    private final ChannelGroup m_channels = new DefaultChannelGroup();
     private Channel m_rtspChannel;
     private Channel m_rtpAudioChannel;
     private Channel m_rtpControlChannel;
@@ -80,35 +83,29 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
         bootstrap.setOption("tcpNoDelay", true);
         bootstrap.setOption("keepAlive", true);
         bootstrap.setPipelineFactory(this);
-        bootstrap.bind(new InetSocketAddress("0.0.0.0", portFirst));
+
         m_rtspChannel = bootstrap.connect(remoteAddress).getChannel();
+        synchronized (m_channels) {
+            m_channels.add(m_rtspChannel);
+        }
+        s_logger.info("Create for: " + m_remoteAddress);
     }
 
     public void close() {
-        s_logger.info("close for: " + m_remoteAddress);
+        synchronized (m_channels) {
+            m_channels.close().awaitUninterruptibly();
+            m_channels.clear();
+        }
 
-        Channel channel = m_rtpAudioChannel;
-        m_rtpAudioChannel = null;
-        if (channel != null)
-            channel.close();
-
-        channel = m_rtpControlChannel;
-        m_rtpControlChannel = null;
-        if (channel != null)
-            channel.close();
-
-        channel = m_rtpTimingChannel;
-        m_rtpTimingChannel = null;
-        if (channel != null)
-            channel.close();
-
-        channel = m_rtspChannel;
         m_rtspChannel = null;
-        if (channel != null)
-            channel.close();
+        m_rtpAudioChannel = null;
+        m_rtpControlChannel = null;
+        m_rtpTimingChannel = null;
 
         m_upRtpControlChannel = null;
         m_upRtpTimingChannel = null;
+
+        s_logger.info("close for: " + m_remoteAddress);
     }
 
     public void setUpStreamRtpChannels(Channel upRtpControlChannel, Channel upRtpTimingChannel) {
@@ -181,6 +178,9 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
         Channel channel = bootstrap.bind(Utils.substitutePort(localAddress, m_rtpPortFirst + channelType.ordinal()));
         channel.connect(Utils.substitutePort(m_remoteAddress, remotePort));
         s_logger.info("create rtp channel " + channel.getLocalAddress() + " for " + m_remoteAddress + ": " + channelType);
+        synchronized (m_channels) {
+            m_channels.add(channel);
+        }
         return channel;
     }
 
