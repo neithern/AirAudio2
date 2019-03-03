@@ -46,7 +46,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	/**
 	 * The RTP channel type
 	 */
-	private enum RaopRtpChannelType { Audio, Control, Timing };
+	private enum RtpChannelType { Audio, Control, Timing };
 
 	private static final int RTP_AUDIO_PORT = 56300;
 	private static final int RTP_CONTROL_PORT = 56301;
@@ -56,82 +56,6 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	private static final String HeaderSession = "Session";
 
 	/**
-	 * Routes incoming packets from the control and timing channel to
-	 * the audio channel
-	 */
-	private class RaopRtpInputToAudioRouterUpstreamHandler extends SimpleChannelUpstreamHandler {
-		@Override
-		public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt)
-			throws Exception
-		{
-			/* Get audio channel from the enclosing RaopAudioHandler */
-			final Channel audioChannel = m_audioChannel;
-			if (audioChannel != null && audioChannel.isOpen() && audioChannel.isReadable()) {
-				audioChannel.getPipeline().sendUpstream(new UpstreamMessageEvent(
-					audioChannel,
-					evt.getMessage(),
-					evt.getRemoteAddress())
-				);
-			}
-		}
-	}
-
-	/**
-	 * Routes outgoing packets on audio channel to the control or timing
-	 * channel if appropriate
-	 */
-	private class RaopRtpAudioToOutputRouterDownstreamHandler extends SimpleChannelDownstreamHandler {
-		@Override
-		public void writeRequested(final ChannelHandlerContext ctx, final MessageEvent evt)
-			throws Exception
-		{
-			final RaopRtpPacket packet = (RaopRtpPacket)evt.getMessage();
-
-			/* Get control and timing channel from the enclosing RaopAudioHandler */
-			if (packet instanceof RaopRtpPacket.RetransmitRequest) {
-				final Channel controlChannel = m_controlChannel;
-				if ((controlChannel != null) && controlChannel.isOpen() && controlChannel.isWritable())
-					controlChannel.write(evt.getMessage());
-			}
-			else if (packet instanceof RaopRtpPacket.TimingRequest) {
-				final Channel timingChannel = m_timingChannel;
-				if ((timingChannel != null) && timingChannel.isOpen() && timingChannel.isWritable())
-					timingChannel.write(evt.getMessage());
-			}
-			else {
-				super.writeRequested(ctx, evt);
-			}
-		}
-	}
-
-	/**
-	 * Places incoming audio data on the audio output queue
-	 *
-	 */
-	public class RaopRtpAudioEnqueueHandler extends SimpleChannelUpstreamHandler {
-		@Override
-		public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt)
-			throws Exception
-		{
-			final Object message = evt.getMessage();
-			if (message instanceof RaopRtpPacket.Audio) {
-				final RaopRtpPacket.Audio audioPacket = (RaopRtpPacket.Audio) message;
-
-				/* Get audio output queue from the enclosing RaopAudioHandler */
-				AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
-				if (audioOutputQueue != null) {
-					audioOutputQueue.enqueue(audioPacket.getTimeStamp(), audioPacket.getPayload());
-					if (s_logger.isLoggable(Level.FINEST))
-						s_logger.finest("Packet with sequence " + audioPacket.getSequence() + " for playback at " + audioPacket.getTimeStamp() + " submitted to audio output queue");
-				} else {
-					s_logger.warning("No audio queue available, dropping packet");
-				}
-			}
-			super.messageReceived(ctx, evt);
-		}
-	}
-
-	/**
 	 * Executor service used for the RTP channels
 	 */
 	private final Executor m_executor;
@@ -139,9 +63,9 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	private final ChannelHandler m_exceptionLoggingHandler = new ExceptionLoggingHandler();
 	private final ChannelHandler m_decodeHandler = new RaopRtpDecodeHandler();
 	private final ChannelHandler m_encodeHandler = new RtpEncodeHandler();
-	private final ChannelHandler m_inputToAudioRouterDownstreamHandler = new RaopRtpInputToAudioRouterUpstreamHandler();
-	private final ChannelHandler m_audioToOutputRouterUpstreamHandler = new RaopRtpAudioToOutputRouterDownstreamHandler();
-    private final ChannelHandler m_enqueueHandler = new RaopRtpAudioEnqueueHandler();
+	private final ChannelHandler m_enqueueHandler = new RtpAudioEnqueueHandler();
+	private final RaopRtpInputToAudioUpstreamHandler m_inputToAudioRouterDownstreamHandler = new RaopRtpInputToAudioUpstreamHandler();
+	private final RaopRtpAudioToOutputDownstreamHandler m_audioToOutputRouterUpstreamHandler = new RaopRtpAudioToOutputDownstreamHandler();
 
 	private ChannelHandler m_audioDecryptHandler;
 	private ChannelHandler m_audioDecodeHandler;
@@ -183,12 +107,15 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		if (audioOutputQueue != null)
 			audioOutputQueue.close();
 
-		m_rtpChannels.close();
+		m_rtpChannels.close().awaitUninterruptibly();
 		m_rtpChannels.clear();
 
 		m_audioChannel = null;
 		m_controlChannel = null;
 		m_timingChannel = null;
+
+		m_inputToAudioRouterDownstreamHandler.setRtpAudioChannel(null);
+		m_audioToOutputRouterUpstreamHandler.setRtpChannels(null, null);
 
 		m_audioDecryptHandler = null;
 		m_audioDecodeHandler = null;
@@ -197,9 +124,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	}
 
 	@Override
-	public void channelClosed(final ChannelHandlerContext ctx, final ChannelStateEvent evt)
-		throws Exception
-	{
+	public void channelClosed(final ChannelHandlerContext ctx, final ChannelStateEvent evt) throws Exception {
 		s_logger.info("RTSP connection was shut down, closing RTP channels and audio output queue");
 
 		reset();
@@ -482,7 +407,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 				final Channel channel = createRtpChannel(
 					Utils.substitutePort(localAddress, RTP_CONTROL_PORT),
 					Utils.substitutePort(remoteAddress, clientControlPort),
-					RaopRtpChannelType.Control
+					RtpChannelType.Control
 				);
 				m_controlChannel = channel;
 				s_logger.info("Launched RTP control service on " + channel.getLocalAddress());
@@ -494,7 +419,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 				final Channel channel = createRtpChannel(
 					Utils.substitutePort(localAddress, RTP_TIMING_PORT),
 					Utils.substitutePort(remoteAddress, clientTimingPort),
-					RaopRtpChannelType.Timing
+					RtpChannelType.Timing
 				);
 				m_timingChannel = channel;
 				s_logger.info("Launched RTP timing service on " + channel.getLocalAddress());
@@ -510,11 +435,14 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 		final Channel channel = createRtpChannel(
 			Utils.substitutePort(localAddress, RTP_AUDIO_PORT),
 			null,
-			RaopRtpChannelType.Audio
+			RtpChannelType.Audio
 		);
 		m_audioChannel = channel;
 		s_logger.info("Launched RTP audio service on " + channel.getLocalAddress());
 		responseOptions.add("server_port=" + ((InetSocketAddress)channel.getLocalAddress()).getPort());
+
+		m_inputToAudioRouterDownstreamHandler.setRtpAudioChannel(m_audioChannel);
+		m_audioToOutputRouterUpstreamHandler.setRtpChannels(m_controlChannel, m_timingChannel);
 
 		/* Send response */
 		final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0,  RtspResponseStatuses.OK);
@@ -646,8 +574,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 	 * @param channelType channel type. Determines which handlers are put into the pipeline
 	 * @return open data-gram channel
 	 */
-	private Channel createRtpChannel(final SocketAddress local, final SocketAddress remote, final RaopRtpChannelType channelType)
-	{
+	private Channel createRtpChannel(final SocketAddress local, final SocketAddress remote, final RtpChannelType channelType) {
 		/* Create bootstrap helper for a data-gram socket using OIO,
 		 * default is NIO which not work <= Android 5.1 ???
 		 */
@@ -675,7 +602,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 				/* We pretend that all communication takes place on the audio channel,
 				 * and simply re-route packets from and to the control and timing channels
 				 */
-				if (!channelType.equals(RaopRtpChannelType.Audio)) {
+				if (channelType != RtpChannelType.Audio) {
 					pipeline.addLast("inputToAudioRouter", m_inputToAudioRouterDownstreamHandler);
 				} else {
 					pipeline.addLast("audioToOutputRouter", m_audioToOutputRouterUpstreamHandler);
@@ -693,14 +620,34 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 
 		/* Bind to local address */
 		Channel channel = bootstrap.bind(local);
-
-		/* Add to group of RTP channels beloging to this RTSP connection */
 		m_rtpChannels.add(channel);
-
 		/* Connect to remote address if one was provided */
 		if (remote != null)
 			channel.connect(remote);
-
 		return channel;
+	}
+
+	/**
+	 * Places incoming audio data on the audio output queue
+	 *
+	 */
+	public class RtpAudioEnqueueHandler extends SimpleChannelUpstreamHandler {
+		@Override
+		public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt) throws Exception {
+			final Object message = evt.getMessage();
+			if (message instanceof RaopRtpPacket.Audio) {
+				final RaopRtpPacket.Audio audioPacket = (RaopRtpPacket.Audio) message;
+				/* Get audio output queue from the enclosing RaopAudioHandler */
+				final AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
+				if (audioOutputQueue != null) {
+					audioOutputQueue.enqueue(audioPacket.getTimeStamp(), audioPacket.getPayload());
+					if (s_logger.isLoggable(Level.FINEST))
+						s_logger.finest("Packet with sequence " + audioPacket.getSequence() + " for playback at " + audioPacket.getTimeStamp() + " submitted to audio output queue");
+				} else {
+					s_logger.warning("No audio queue available, dropping packet");
+				}
+			}
+			super.messageReceived(ctx, evt);
+		}
 	}
 }

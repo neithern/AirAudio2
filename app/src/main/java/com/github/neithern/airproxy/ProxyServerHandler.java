@@ -98,8 +98,8 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	 * All RTP channels belonging to this RTSP connection
 	 */
 	private final ChannelGroup m_rtpChannels = new DefaultChannelGroup();
-	private Channel m_rtpControlChannel;
-	private Channel m_rtpTimingChannel;
+	private Channel m_controlChannel;
+	private Channel m_timingChannel;
 
 	private final CopyOnWriteArraySet<ProxyRtspClient> m_rtspClients = new CopyOnWriteArraySet<>();
 
@@ -114,12 +114,11 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	}
 
 	private void reset() {
-		synchronized (m_rtpChannels) {
-			m_rtpChannels.close().awaitUninterruptibly();
-			m_rtpChannels.clear();
-		}
-		m_rtpControlChannel = null;
-		m_rtpTimingChannel = null;
+		m_rtpChannels.close().awaitUninterruptibly();
+		m_rtpChannels.clear();
+
+		m_controlChannel = null;
+		m_timingChannel = null;
 
 		for (ProxyRtspClient client : m_rtspClients)
 			client.close();
@@ -416,7 +415,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 					Utils.substitutePort(remoteAddress, clientControlPort),
 					RtpChannelType.Control
 				);
-				m_rtpControlChannel = channel;
+				m_controlChannel = channel;
 				s_logger.info("Launched RTP control service on " + channel.getLocalAddress());
 				responseOptions.add("control_port=" + ((InetSocketAddress) channel.getLocalAddress()).getPort());
 			}
@@ -428,7 +427,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 					Utils.substitutePort(remoteAddress, clientTimingPort),
 					RtpChannelType.Timing
 				);
-				m_rtpTimingChannel = channel;
+				m_timingChannel = channel;
 				s_logger.info("Launched RTP timing service on " + channel.getLocalAddress());
 				responseOptions.add("timing_port=" + ((InetSocketAddress) channel.getLocalAddress()).getPort());
 			}
@@ -448,7 +447,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		responseOptions.add("server_port=" + ((InetSocketAddress) channel.getLocalAddress()).getPort());
 
 		for (ProxyRtspClient client : m_rtspClients)
-			client.setUpStreamRtpChannels(m_rtpControlChannel, m_rtpTimingChannel);
+			client.setUpStreamRtpChannels(m_controlChannel, m_timingChannel);
 
 		/* Send response */
 		final HttpResponse response = new DefaultHttpResponse(RtspVersions.RTSP_1_0,  RtspResponseStatuses.OK);
@@ -574,9 +573,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		});
 
 		final Channel channel = bootstrap.bind(local);
-		synchronized (m_rtpChannels) {
-			m_rtpChannels.add(channel);
-		}
+		m_rtpChannels.add(channel);
 		if (remote != null)
 			channel.connect(remote);
 		return channel;
@@ -590,8 +587,8 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		}
 
 		@Override
-		public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-			final Object msg = e.getMessage();
+		public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
+			final Object msg = evt.getMessage();
 			for (ProxyRtspClient client : m_rtspClients) {
 				switch (m_type) {
 					case Audio:
