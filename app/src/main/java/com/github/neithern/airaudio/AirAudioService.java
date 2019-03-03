@@ -40,10 +40,12 @@ import java.util.Set;
 public class AirAudioService extends Service {
     public static final String BROADCAST_SERVER_STATE = "SERVER_STATE";
     public static final String EXTRA_ON = "server_on";
-    public static final String EXTRA_NAME = "name";
+    public static final String EXTRA_PLAYER_NAME = "name";
     public static final String EXTRA_CHANNEL_MODE = "channel";
     public static final String EXTRA_OUTPUT_STREAM = "output";
-    public static final String EXTRA_FORWARD_SERVERS = "servers";
+
+    public static final String EXTRA_GROUP_NAME = "group_name";
+    public static final String EXTRA_GROUP_ADDRESSES = "group_addresses";
 
     public static final int STREAM_TTS = 9; // AudioManager.STREAM_TTS
 
@@ -72,10 +74,11 @@ public class AirAudioService extends Service {
         final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(this);
         final String action = intent != null ? intent.getAction() : null;
         final Bundle extras = intent != null ? intent.getExtras() : null;
-        final String name = getName(extras, pref);
+        final String playerName = getPlayerName(extras, pref);
         final int streamType = getStreamType(extras, pref);
         final AudioChannel channelMode = getChannelMode(extras, pref);
-        final InetSocketAddress[] forwardServers = getForwardServers(extras, pref);
+        final String groupName = getGroupName(extras, pref);
+        final Set<InetSocketAddress> groupAddresses = getGroupAddresses(extras, pref);
         final boolean shutDown = Intent.ACTION_SHUTDOWN.equals(action);
         AsyncTask.execute(new Runnable() {
             @Override
@@ -85,10 +88,10 @@ public class AirAudioService extends Service {
                     server.stop();
                 }
                 if (!shutDown && !server.isRunning()) {
-                    server.start(name, streamType, channelMode, forwardServers);
+                    server.start(playerName, streamType, channelMode, groupName, groupAddresses);
                 }
                 Intent result = new Intent(BROADCAST_SERVER_STATE);
-                result.putExtra(EXTRA_NAME, name);
+                result.putExtra(EXTRA_PLAYER_NAME, playerName);
                 result.putExtra(EXTRA_ON, server.isRunning());
                 sendBroadcast(result);
             }
@@ -96,17 +99,14 @@ public class AirAudioService extends Service {
         return START_STICKY;
     }
 
-    public static String getName(Bundle extras, SharedPreferences pref) {
-        String name = extras != null ? extras.getString(EXTRA_NAME) : null;
+    public static String getPlayerName(Bundle extras, SharedPreferences pref) {
+        String name = extras != null ? extras.getString(EXTRA_PLAYER_NAME) : null;
         if (name == null || name.isEmpty()) {
-            name = pref.getString(EXTRA_NAME, null);
-            if (name == null || name.isEmpty()) {
+            name = pref.getString(EXTRA_PLAYER_NAME, null);
+            if (name == null)
                 name = Build.MODEL;
-                if (BuildConfig.DEBUG)
-                    name += "(Debug)";
-            }
         } else {
-            pref.edit().putString(EXTRA_NAME, name).apply();
+            pref.edit().putString(EXTRA_PLAYER_NAME, name).apply();
         }
         return name;
     }
@@ -149,24 +149,36 @@ public class AirAudioService extends Service {
         return streamType;
     }
 
-    public static InetSocketAddress[] getForwardServers(Bundle extras, SharedPreferences pref) {
+    public static String getGroupName(Bundle extras, SharedPreferences pref) {
+        String name = extras != null ? extras.getString(EXTRA_GROUP_NAME) : null;
+        if (name == null || name.isEmpty()) {
+            name = pref.getString(EXTRA_GROUP_NAME, null);
+            if (name == null)
+                name = "Group";
+        } else {
+            pref.edit().putString(EXTRA_GROUP_NAME, name).apply();
+        }
+        return name;
+    }
+
+    public static Set<InetSocketAddress> getGroupAddresses(Bundle extras, SharedPreferences pref) {
         final Set<String> servers;
-        final String[] list = extras != null ? extras.getStringArray(EXTRA_FORWARD_SERVERS) : null;
+        final String[] list = extras != null ? extras.getStringArray(EXTRA_GROUP_ADDRESSES) : null;
         if (list != null && list.length > 0) {
             servers = new HashSet<>(Arrays.asList(list));
-            pref.edit().putStringSet(EXTRA_FORWARD_SERVERS, servers).apply();
+            pref.edit().putStringSet(EXTRA_GROUP_ADDRESSES, servers).apply();
         } else {
-            servers = pref.getStringSet(EXTRA_FORWARD_SERVERS, null);
+            servers = pref.getStringSet(EXTRA_GROUP_ADDRESSES, null);
         }
         if (servers == null || servers.isEmpty())
             return null;
 
-        ArrayList<InetSocketAddress> addresses = new ArrayList<>(servers.size());
+        HashSet<InetSocketAddress> addresses = new HashSet<>(servers.size());
         for (String addr : servers) {
             InetSocketAddress address = AirAudioServer.parseAddress(addr);
             if (address != null)
                 addresses.add(address);
         }
-        return addresses.toArray(new InetSocketAddress[0]);
+        return addresses;
     }
 }

@@ -19,9 +19,18 @@
         android:entries="@array/channel_mode_titles"
         android:entryValues="@array/channel_mode_values" />
 
-    <MultiSelectListPreference
-        android:enabled="false"
-        android:key="servers"
-        android:title="@string/play_together" />
+    <PreferenceScreen
+        android:key="group"
+        android:title="@string/group_mode">
+
+        <EditTextPreference
+            android:key="group_name"
+            android:title="@string/group_name" />
+
+        <MultiSelectListPreference
+            android:key="group_addresses"
+            android:title="@string/group_speaks" />
+
+    </PreferenceScreen>
 
 </PreferenceScreen>

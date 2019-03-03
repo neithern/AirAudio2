@@ -11,35 +11,28 @@ import android.preference.MultiSelectListPreference;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
 import android.preference.PreferenceManager;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Switch;
 
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Set;
 
-import javax.jmdns.ServiceEvent;
-import javax.jmdns.ServiceInfo;
-import javax.jmdns.ServiceListener;
-
-import static com.github.neithern.airaudio.AirAudioService.EXTRA_NAME;
+import static com.github.neithern.airaudio.AirAudioService.EXTRA_GROUP_NAME;
+import static com.github.neithern.airaudio.AirAudioService.EXTRA_PLAYER_NAME;
 
 public class MainActivity extends PreferenceActivity {
     private Switch serverSwitch;
     private Preference prefName;
-    private MultiSelectListPreference prefServers;
+    private Preference prefGroup;
+    private Preference prefGroupName;
+    private MultiSelectListPreference prefGroupAddresses;
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent != null ? intent.getAction() : null;
             if (AirAudioService.BROADCAST_SERVER_STATE.equals(action)) {
-                String name = intent.getStringExtra(EXTRA_NAME);
-                if (name != null && prefName != null)
-                    prefName.setSummary(name);
-
                 boolean on = intent.getBooleanExtra(AirAudioService.EXTRA_ON, false);
                 serverSwitch.setChecked(on);
                 serverSwitch.setEnabled(true);
@@ -50,9 +43,9 @@ public class MainActivity extends PreferenceActivity {
     private final Preference.OnPreferenceChangeListener preferenceChangeListener = new Preference.OnPreferenceChangeListener() {
         @Override
         public boolean onPreferenceChange(Preference preference, Object newValue) {
-            if (preference == prefName)
+            if (preference == prefName || preference == prefGroupName)
                 preference.setSummary(newValue.toString());
-            else if (preference == prefServers)
+            else if (preference == prefGroupAddresses)
                 updateServerNames((Set<String>) newValue);
             restartService();
             return true;
@@ -62,31 +55,22 @@ public class MainActivity extends PreferenceActivity {
     private final ArrayList<CharSequence> deviceNames = new ArrayList<>();
     private final ArrayList<CharSequence> deviceAddresses = new ArrayList<>();
     private final AirPlayDiscovery discovery = new AirPlayDiscovery();
-    private final ServiceListener serviceListener = new ServiceListener() {
+    private final AirPlayDiscovery.Listener serviceListener = new AirPlayDiscovery.Listener() {
         @Override
-        public void serviceAdded(ServiceEvent event) {
-        }
-
-        @Override
-        public void serviceRemoved(ServiceEvent event) {
-            ServiceInfo si = event.getInfo();
-            deviceNames.remove(si.getName());
-            deviceAddresses.remove(si.getHostAddress());
+        public void onServiceAdded(String name, String address, boolean self) {
+            if (lookupName(address) == null) {
+                if (self)
+                    name = name + getString(R.string.self);
+                deviceNames.add(name);
+                deviceAddresses.add(address);
+            }
             updateServerList();
         }
 
         @Override
-        public void serviceResolved(ServiceEvent event) {
-            ServiceInfo si = event.getInfo();
-            String name = si.getName();
-            String address = si.getHostAddress() + ':' + si.getPort();
-            if (lookupName(address) == null) {
-                int pos = name.indexOf('@');
-                name = name.substring(pos + 1);
-                deviceNames.add(name);
-                deviceAddresses.add(address);
-            }
-            Log.d("Device", name + ", " + address + ", " + new String(si.getTextBytes()));
+        public void onServiceRemoved(String name, String address) {
+            deviceNames.remove(name);
+            deviceAddresses.remove(address);
             updateServerList();
         }
     };
@@ -100,22 +84,29 @@ public class MainActivity extends PreferenceActivity {
         SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(this);
 
         // set default name
-        String name = AirAudioService.getName(extras, pref);
-        pref.edit().putString(EXTRA_NAME, name).apply();
+        String name = AirAudioService.getPlayerName(extras, pref);
+        String groupName = AirAudioService.getGroupName(extras, pref);
+        pref.edit().putString(EXTRA_PLAYER_NAME, name)
+                .putString(EXTRA_GROUP_NAME, groupName)
+                .apply();
 
         addPreferencesFromResource(R.xml.main);
 
-        prefName = findPreference(AirAudioService.EXTRA_NAME);
+        prefName = findPreference(AirAudioService.EXTRA_PLAYER_NAME);
         prefName.setSummary(name);
         prefName.setOnPreferenceChangeListener(preferenceChangeListener);
 
         findPreference(AirAudioService.EXTRA_OUTPUT_STREAM).setOnPreferenceChangeListener(preferenceChangeListener);
         findPreference(AirAudioService.EXTRA_CHANNEL_MODE).setOnPreferenceChangeListener(preferenceChangeListener);
 
+        prefGroup = findPreference("group");
+        prefGroupName = findPreference(AirAudioService.EXTRA_GROUP_NAME);
+        prefGroupName.setSummary(groupName);
+        prefGroupName.setOnPreferenceChangeListener(preferenceChangeListener);
+
         discovery.create(serviceListener);
-        prefServers = (MultiSelectListPreference) findPreference(AirAudioService.EXTRA_FORWARD_SERVERS);
-        prefServers.setSummary("");
-        prefServers.setOnPreferenceChangeListener(preferenceChangeListener);
+        prefGroupAddresses = (MultiSelectListPreference) findPreference(AirAudioService.EXTRA_GROUP_ADDRESSES);
+        prefGroupAddresses.setOnPreferenceChangeListener(preferenceChangeListener);
         updateServerList();
 
         ActionBar actionBar = getActionBar();
@@ -167,23 +158,27 @@ public class MainActivity extends PreferenceActivity {
     }
 
     private void updateServerList() {
-        prefServers.setEntries(deviceNames.toArray(new CharSequence[0]));
-        prefServers.setEntryValues(deviceAddresses.toArray(new CharSequence[0]));
+        prefGroupAddresses.setEntries(deviceNames.toArray(new CharSequence[0]));
+        prefGroupAddresses.setEntryValues(deviceAddresses.toArray(new CharSequence[0]));
 
         Set<String> addresses = PreferenceManager.getDefaultSharedPreferences(this)
-                .getStringSet(AirAudioService.EXTRA_FORWARD_SERVERS, null);
+                .getStringSet(AirAudioService.EXTRA_GROUP_ADDRESSES, null);
         updateServerNames(addresses);
     }
 
     private void updateServerNames(Set<String> addresses) {
-        StringBuilder builder = new StringBuilder(getString(R.string.play_self));
-        if (addresses != null) {
+        if (addresses != null && !addresses.isEmpty()) {
+            StringBuilder builder = new StringBuilder(256);
             for (String addr : addresses) {
                 CharSequence name = lookupName(addr);
-                builder.append(", ");
+                if (builder.length() > 0)
+                    builder.append(", ");
                 builder.append(name != null ? name : addr);
             }
+            prefGroupAddresses.setSummary(builder.toString());
+        } else {
+            prefGroupAddresses.setSummary(R.string.not_specified);
         }
-        prefServers.setSummary(builder.toString());
+        prefGroup.setSummary(addresses != null && !addresses.isEmpty() ? R.string.group_enabled : R.string.group_disabled);
     }
 }

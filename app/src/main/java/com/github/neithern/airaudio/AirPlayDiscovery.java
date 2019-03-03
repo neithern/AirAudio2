@@ -15,12 +15,19 @@ import javax.jmdns.ServiceEvent;
 import javax.jmdns.ServiceListener;
 
 public class AirPlayDiscovery implements ServiceListener {
+    public static final int PROXY_PORT = AirAudioServer.PROXY_PORT;
+
+    public interface Listener {
+        void onServiceAdded(String name, String address, boolean self);
+        void onServiceRemoved(String name, String address);
+    }
+
     private final ArrayList<JmDNS> jmDNSInstances = new ArrayList<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HashSet<InetAddress> selfAddresses = new HashSet<>();
-    private ServiceListener externalListener;
+    private Listener externalListener;
 
-    public boolean create(ServiceListener listener) {
+    public boolean create(Listener listener) {
         externalListener = listener;
         AsyncTask.execute(new Runnable() {
             @Override
@@ -88,46 +95,58 @@ public class AirPlayDiscovery implements ServiceListener {
 
     @Override
     public void serviceAdded(final ServiceEvent event) {
-        if (selfAddresses.contains(event.getInfo().getInetAddress()))
+        final InetAddress[] addresses = event.getInfo().getInetAddresses();
+        if (addresses == null || addresses.length == 0)
+            return;
+        final int port = event.getInfo().getPort();
+        if (port == PROXY_PORT)
             return;
 
         handler.post(new Runnable() {
             @Override
             public void run() {
-                ServiceListener listener = externalListener;
-                if (listener != null)
-                    listener.serviceAdded(event);
+                Listener listener = externalListener;
+                if (listener != null) {
+                    for (InetAddress address : addresses) {
+                        final boolean self = selfAddresses.contains(address);
+                        listener.onServiceAdded(getDisplayName(event.getName()),
+                                getAddressWithPort(address, port), self);
+                    }
+                }
             }
         });
     }
 
     @Override
     public void serviceRemoved(final ServiceEvent event) {
-        if (selfAddresses.contains(event.getInfo().getInetAddress()))
+        final InetAddress[] addresses = event.getInfo().getInetAddresses();
+        if (addresses == null || addresses.length == 0)
             return;
 
         handler.post(new Runnable() {
             @Override
             public void run() {
-                ServiceListener listener = externalListener;
-                if (listener != null)
-                    listener.serviceRemoved(event);
+                Listener listener = externalListener;
+                if (listener != null) {
+                    final int port = event.getInfo().getPort();
+                    for (InetAddress address : addresses)
+                        listener.onServiceRemoved(getDisplayName(event.getName()),
+                                getAddressWithPort(address, port));
+                }
             }
         });
     }
 
     @Override
     public void serviceResolved(final ServiceEvent event) {
-        if (selfAddresses.contains(event.getInfo().getInetAddress()))
-            return;
+        serviceAdded(event);
+    }
 
-        handler.post(new Runnable() {
-            @Override
-            public void run() {
-                ServiceListener listener = externalListener;
-                if (listener != null)
-                    listener.serviceResolved(event);
-            }
-        });
+    private static String getAddressWithPort(InetAddress address, int port) {
+        return address.getHostAddress() + ':' + port;
+    }
+
+    private static String getDisplayName(String name) {
+        return name.substring(name.indexOf('@') + 1);
     }
 }

@@ -4,8 +4,13 @@
     <string name="channel_stereo">播放立体声</string>
     <string name="channel_only_left">仅播放左声道</string>
     <string name="channel_only_right">仅播放右声道</string>
-    <string name="play_self">本机</string>
-    <string name="play_together">一起播放</string>
+    <string name="group_disabled">未启用</string>
+    <string name="group_enabled">已启用</string>
+    <string name="group_mode">群组播放模式</string>
+    <string name="group_name">群组名称</string>
+    <string name="group_speaks">群组播放器</string>
+    <string name="not_specified">(未指定)</string>
+    <string name="self">(本机)</string>
     <string name="server_name">服务名称</string>
     <string name="stream_type">音频播放流类型</string>
     <string name="stream_music">音乐</string>

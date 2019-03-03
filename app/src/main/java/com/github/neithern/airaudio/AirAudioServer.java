@@ -48,6 +48,8 @@ import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -57,8 +59,8 @@ import javax.jmdns.ServiceInfo;
 public class AirAudioServer {
     private static final String TAG = "AirAudioServer";
 
-    private static final int PRIVATE_PORT = 46342;
-    public static final int RTSP_PORT = 46343;
+    private static final int PLAYER_PORT = 46343;
+    public static final int PROXY_PORT = 46344;
 
     public static final String AIRPLAY_SERVICE_TYPE = "_raop._tcp.local.";
 
@@ -105,33 +107,34 @@ public class AirAudioServer {
         return running;
     }
 
-    public boolean start(String displayName, int audioStream, AudioChannel channelMode, InetSocketAddress[] forwardServers) {
+    public boolean start(String playerName, int audioStream, AudioChannel channelMode, String groupName, Set<InetSocketAddress> groupAddresses) {
         Enumeration<NetworkInterface> eni = null;
         try {
             eni = NetworkInterface.getNetworkInterfaces();
         } catch (Exception e) {
-            Log.e(TAG, "Enum net work failed", e);
+            Log.e(TAG, "Enum network failed", e);
             return false;
         }
 
-        int count = 0;//fixme: forwardServers != null ? forwardServers.length : 0;
-        Channel channel = createPlayerServer(audioStream, channelMode, count > 0 ? PRIVATE_PORT : RTSP_PORT);
-        if (channel == null)
-            return false;
+        int playerPort = 0;
+        int proxyPort = 0;
 
-        int rtspPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
-        if (count > 0) {
-            InetSocketAddress[] remotes = Arrays.copyOf(forwardServers, ++count);
-            remotes[count - 1] = new InetSocketAddress("127.0.0.1", rtspPort);
+        if (playerName != null && !playerName.isEmpty()) {
+            Channel channel = createPlayerServer(audioStream, channelMode);
+            if (channel == null)
+                return false;
+            playerPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
+        }
 
-            Channel proxyChannel = createProxyServer(remotes, RTSP_PORT);
-            if (proxyChannel == null) {
+        CopyOnWriteArraySet<InetSocketAddress> serverSet = new CopyOnWriteArraySet<>();
+        if (groupName != null && !groupName.isEmpty() && groupAddresses != null && !groupAddresses.isEmpty()) {
+            serverSet.addAll(groupAddresses);
+            Channel channel = createProxyServer(serverSet);
+            if (channel == null) {
                 closeChannels();
                 return false;
             }
-            /* Publish only proxy server */
-            channel = proxyChannel;
-            rtspPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
+            proxyPort = ((InetSocketAddress) channel.getLocalAddress()).getPort();
         }
 
         running = false;
@@ -151,23 +154,32 @@ public class AirAudioServer {
                 InetAddress addr = eia.nextElement();
                 if (addr.isLoopbackAddress() || addr.isLinkLocalAddress())
                     continue;
+
                 hardwareAddresses.put(addr, hwAddr);
+                // remove address if duplicated
+                serverSet.remove(new InetSocketAddress(addr, proxyPort));
+
                 try {
-                    JmDNS jmDNS = JmDNS.create(addr, displayName + "-jmdns");
+                    JmDNS jmDNS = JmDNS.create(addr, playerName + "-jmdns");
                     jmDNSInstances.add(jmDNS);
 
-                    /* Publish RAOP service */
-                    ServiceInfo serviceInfo = ServiceInfo.create(
-                            AIRPLAY_SERVICE_TYPE,
-                            toHexString(hwAddr) + "@" + displayName, rtspPort,
-                            0 /* weight */, 0 /* priority */,
-                            AIRPLAY_SERVICE_PROPERTIES
-                    );
-                    jmDNS.registerService(serviceInfo);
-                    Log.d(TAG, "Registered AirTunes server " + serviceInfo.getName() + " on " + addr + ':' + rtspPort);
+                    if (playerPort != 0) {
+                        ServiceInfo serviceInfo = ServiceInfo.create(AIRPLAY_SERVICE_TYPE,
+                                toHexString(hwAddr) + "@" + playerName, playerPort,
+                                0, 0,AIRPLAY_SERVICE_PROPERTIES);
+                        jmDNS.registerService(serviceInfo);
+                        Log.d(TAG, "Register player server " + serviceInfo.getName() + " on " + addr + ':' + playerPort);
+                    }
+                    if (proxyPort != 0) {
+                        ServiceInfo serviceInfo = ServiceInfo.create(AIRPLAY_SERVICE_TYPE,
+                                toHexString(hwAddr) + "@" + groupName, proxyPort,
+                                0, 0, AIRPLAY_SERVICE_PROPERTIES);
+                        jmDNS.registerService(serviceInfo);
+                        Log.d(TAG, "Register group server " + serviceInfo.getName() + " on " + addr + ':' + proxyPort);
+                    }
                     running = true;
                 } catch (Exception e) {
-                    Log.e(TAG, "Register AirTunes server failed on " + addr + addr + ':' + rtspPort, e);
+                    Log.e(TAG, "Register server failed on " + addr + addr + ':' + playerPort, e);
                 }
             }
         }
@@ -190,16 +202,16 @@ public class AirAudioServer {
         channelGroup.clear();
     }
 
-    private Channel createPlayerServer(int audioStream, AudioChannel channelMode, int port) {
+    private Channel createPlayerServer(int audioStream, AudioChannel channelMode) {
         RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(audioStream, channelMode,
                 executor, executionHandler, hardwareAddresses, closeHandler);
-        return crateServer(factory, port);
+        return crateServer(factory, PLAYER_PORT);
     }
 
-    private Channel createProxyServer(InetSocketAddress[] forwardServers, int port) {
-        ProxyRtspPipelineFactory factory = new ProxyRtspPipelineFactory(forwardServers,
+    private Channel createProxyServer(CopyOnWriteArraySet<InetSocketAddress> serverSet) {
+        ProxyRtspPipelineFactory factory = new ProxyRtspPipelineFactory(serverSet,
                 executor, executionHandler, hardwareAddresses, closeHandler);
-        return crateServer(factory, port);
+        return crateServer(factory, PROXY_PORT);
     }
 
     private Channel crateServer(ChannelPipelineFactory factory, int port) {
@@ -247,8 +259,11 @@ public class AirAudioServer {
      */
     public static InetSocketAddress parseAddress(String addressAndPort) {
         try {
-            String[] parts = addressAndPort.split(":");
-            return new InetSocketAddress(parts[0], Integer.valueOf(parts[1]));
+            int pos = addressAndPort.lastIndexOf(':');
+            if (pos == -1)
+                return null;
+            return new InetSocketAddress(addressAndPort.substring(0, pos),
+                    Integer.valueOf(addressAndPort.substring(pos + 1)));
         } catch (Exception e) {
             e.printStackTrace();
         }

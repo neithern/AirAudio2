@@ -34,6 +34,7 @@ import org.phlo.AirReceiver.RtspLoggingHandler;
 import org.phlo.AirReceiver.RtspUnsupportedResponseHandler;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executor;
 
 public class ProxyRtspPipelineFactory implements ChannelPipelineFactory {
@@ -41,9 +42,9 @@ public class ProxyRtspPipelineFactory implements ChannelPipelineFactory {
     private final ExecutionHandler m_executionHandler;
     private final HardwareAddressMap m_hardwareAddressMap;
     private final ChannelHandler m_closeOnShutdownHandler;
-    private final InetSocketAddress[] m_rtspServerAddresses;
+    private final CopyOnWriteArraySet<InetSocketAddress> m_serverSet;
 
-    public ProxyRtspPipelineFactory(InetSocketAddress[] rtspServerAddresses,
+    public ProxyRtspPipelineFactory(CopyOnWriteArraySet<InetSocketAddress> serverSet,
                                     Executor executor,
                                     ExecutionHandler executionHandler,
                                     HardwareAddressMap hardwareAddressMap,
@@ -52,7 +53,7 @@ public class ProxyRtspPipelineFactory implements ChannelPipelineFactory {
         m_executionHandler = executionHandler;
         m_hardwareAddressMap = hardwareAddressMap;
         m_closeOnShutdownHandler = closeOnShutdownHandler;
-        m_rtspServerAddresses = rtspServerAddresses;
+        m_serverSet = serverSet;
     }
 
     @Override
@@ -68,7 +69,7 @@ public class ProxyRtspPipelineFactory implements ChannelPipelineFactory {
         pipeline.addLast("challengeResponse", new RaopRtspChallengeResponseHandler(m_hardwareAddressMap));
         pipeline.addLast("header", new RaopRtspHeaderHandler());
         pipeline.addLast("options", new RaopRtspOptionsHandler());
-        pipeline.addLast("proxy", new ProxyServerHandler(m_executor, m_executionHandler, m_rtspServerAddresses));
+        pipeline.addLast("proxy", new ProxyServerHandler(m_executor, m_executionHandler, m_serverSet.toArray(new InetSocketAddress[0])));
         pipeline.addLast("unsupportedResponse", new RtspUnsupportedResponseHandler());
         return pipeline;
     }
