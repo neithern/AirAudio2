@@ -17,7 +17,6 @@
 
 package org.phlo.AirReceiver;
 
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.jboss.netty.channel.*;
@@ -30,7 +29,7 @@ public class ExceptionLoggingHandler extends SimpleChannelHandler {
 
 	@Override
 	public void exceptionCaught(final ChannelHandlerContext ctx, final ExceptionEvent evt) throws Exception {
+		s_logger.warning("Exception caught of " + ctx.getChannel().getRemoteAddress() + ": " + evt.getCause());
 		super.exceptionCaught(ctx, evt);
-		s_logger.log(Level.WARNING, "Handler raised exception", evt.getCause());
 	}
 }

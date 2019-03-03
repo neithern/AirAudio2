@@ -41,12 +41,10 @@ import org.jboss.netty.handler.codec.rtsp.RtspResponseStatuses;
 import org.jboss.netty.handler.codec.rtsp.RtspVersions;
 import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.phlo.AirReceiver.AudioOutputQueue;
-import org.phlo.AirReceiver.ExceptionLoggingHandler;
 import org.phlo.AirReceiver.ProtocolException;
 import org.phlo.AirReceiver.RaopRtpAudioAlacDecodeHandler;
 import org.phlo.AirReceiver.RaopRtpAudioDecryptionHandler;
 import org.phlo.AirReceiver.RaopRtpDecodeHandler;
-import org.phlo.AirReceiver.RaopRtpPacket;
 import org.phlo.AirReceiver.RaopRtpRetransmitRequestHandler;
 import org.phlo.AirReceiver.RaopRtpTimingHandler;
 import org.phlo.AirReceiver.RaopRtspMethods;
@@ -54,7 +52,6 @@ import org.phlo.AirReceiver.RtpEncodeHandler;
 import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -62,6 +59,7 @@ import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.Executor;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -78,63 +76,28 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	/**
 	 * The RTP channel type
 	 */
-	enum RaopRtpChannelType { Audio, Control, Timing };
+	enum RtpChannelType { Audio, Control, Timing }
 
-	private static final int RTP_AUDIO_PORT = 56400;
-	private static final int RTP_CONTROL_PORT = 56401;
-	private static final int RTP_TIMING_PORT = 56402;
+	private static final int LOCAL_RTP_PORT_FIRST = 56400;
+	private static final int PROXY_PORT_FIRST = 56500;
 
 	protected static final String HeaderTransport = "Transport";
 	protected static final String HeaderSession = "Session";
 
-	private class RtpAudioReceiverHandler extends SimpleChannelUpstreamHandler {
-		@Override
-		public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt) throws Exception {
-            final Object message = evt.getMessage();
-			if (message instanceof RaopRtpPacket.Audio) {
-				final RaopRtpPacket.Audio packet = (RaopRtpPacket.Audio) message;
-				for (ProxyRtspClient client : m_rtspClients)
-					client.sendAudioPacket(packet);
-			}
-			super.messageReceived(ctx, evt);
-		}
-	}
-
-	private class RtpControlAndTimingHandler extends SimpleChannelUpstreamHandler {
-		@Override
-		public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt) throws Exception {
-			final Object message = evt.getMessage();
-			if (message instanceof RaopRtpPacket.Sync) {
-				final RaopRtpPacket.Sync packet = (RaopRtpPacket.Sync) message;
-				for (ProxyRtspClient client : m_rtspClients)
-					client.sendSyncPacket(packet);
-			} else if (message instanceof RaopRtpPacket.TimingResponse) {
-				final RaopRtpPacket.TimingResponse packet = (RaopRtpPacket.TimingResponse) message;
-				for (ProxyRtspClient client : m_rtspClients)
-					client.sendTimingPacket(packet);
-			}
-			super.messageReceived(ctx, evt);
-		}
-	}
-
 	/**
 	 * Executor service used for the RTP channels
 	 */
+	private final Executor m_executor;
 	private final ExecutionHandler m_executionHandler;
-
-	private final ChannelHandler m_exceptionLoggingHandler = new ExceptionLoggingHandler();
-	private final ChannelHandler m_decodeHandler = new RaopRtpDecodeHandler();
-	private final ChannelHandler m_encodeHandler = new RtpEncodeHandler();
-	//private final ChannelHandler m_packetLoggingHandler = new RtpLoggingHandler();
-	private final ChannelHandler m_audioReceiveHandler = new RtpAudioReceiverHandler();
-	private final ChannelHandler m_controlAndTimingHandler = new RtpControlAndTimingHandler();
+	private final ChannelHandler m_rtpDecoder = new RaopRtpDecodeHandler();
+	private final ChannelHandler m_rtpEncoder = new RtpEncodeHandler();
 
 	private final InetSocketAddress[] m_rtspServerAddresses;
 
 	/**
 	 * All RTP channels belonging to this RTSP connection
 	 */
-	private final ChannelGroup m_serverRtpChannels = new DefaultChannelGroup();
+	private final ChannelGroup m_rtpChannels = new DefaultChannelGroup();
 	private Channel m_serverRtpControlChannel;
 	private Channel m_serverRtpTimingChannel;
 
@@ -144,16 +107,20 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	 * Creates an instance, using the ExecutorService for the RTP channel's datagram socket factory
 	 * @param executionHandler
 	 */
-	public ProxyServerHandler(ExecutionHandler executionHandler, InetSocketAddress[] rtspServerAddresses) {
+	public ProxyServerHandler(Executor executor, ExecutionHandler executionHandler, InetSocketAddress[] rtspServerAddresses) {
+		m_executor = executor;
 		m_executionHandler = executionHandler;
 		m_rtspServerAddresses = rtspServerAddresses;
 	}
 
 	private void reset() {
-		synchronized (m_serverRtpChannels) {
-			m_serverRtpChannels.close();
-			m_serverRtpChannels.clear();
+		synchronized (m_rtpChannels) {
+			m_rtpChannels.close();
+			m_rtpChannels.clear();
 		}
+
+		m_serverRtpControlChannel = null;
+		m_serverRtpTimingChannel = null;
 
 		for (ProxyRtspClient client : m_rtspClients)
 			client.close();
@@ -161,17 +128,19 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	}
 
 	private void createRtspClients() {
+		int portFirst = PROXY_PORT_FIRST;
 		for (InetSocketAddress address : m_rtspServerAddresses) {
 			try {
-				final ProxyRtspClient client = new ProxyRtspClient(m_executionHandler, address);
+				final ProxyRtspClient client = new ProxyRtspClient(m_executor, m_executionHandler, address, portFirst);
 				m_rtspClients.add(client);
 			} catch (Exception e) {
 				s_logger.warning("create rtsp client for " + address + " failed: " + e);
 			}
+			portFirst += 5;
 		}
 	}
 
-	private void forwardRtspRequest(final HttpRequest req) {
+	private void forwardRtspRequest(ChannelHandlerContext ctx, HttpRequest req) {
 		final ArrayList<ChannelFuture> futures = new ArrayList<>();
 		for (ProxyRtspClient client : m_rtspClients) {
 			ChannelFuture future = client.sendRequest(req);
@@ -190,7 +159,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 
 	@Override
 	public void channelClosed(final ChannelHandlerContext ctx, final ChannelStateEvent evt) throws Exception {
-		s_logger.info("RTSP connection was shut down, closing RTP channels and audio output queue");
+		s_logger.info("RTSP connection closed, closing RTP local and proxy channels");
 		reset();
 		super.channelClosed(ctx, evt);
 	}
@@ -202,22 +171,22 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 
 		if (RaopRtspMethods.ANNOUNCE.equals(method)) {
 			announceReceived(ctx, req);
-			forwardRtspRequest(req);
+			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.SETUP.equals(method)) {
 			setupReceived(ctx, req);
-			forwardRtspRequest(req);
+			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.RECORD.equals(method)) {
 			recordReceived(ctx, req);
-			forwardRtspRequest(req);
+			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.FLUSH.equals(method)) {
 			flushReceived(ctx, req);
-			forwardRtspRequest(req);
+			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.TEARDOWN.equals(method)) {
 			teardownReceived(ctx, req);
-			forwardRtspRequest(req);
+			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.SET_PARAMETER.equals(method)) {
 			setParameterReceived(ctx, req);
-			forwardRtspRequest(req);
+			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.GET_PARAMETER.equals(method)) {
 			getParameterReceived(ctx, req);
 		} else {
@@ -448,9 +417,9 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 				/* Port number of the client's control socket. Response includes port number of *our* control port */
 				final int clientControlPort = Integer.valueOf(value);
 				final Channel channel = createRtpChannel(
-					Utils.substitutePort(localAddress, RTP_CONTROL_PORT),
+					Utils.substitutePort(localAddress, LOCAL_RTP_PORT_FIRST + RtpChannelType.Control.ordinal()),
 					Utils.substitutePort(remoteAddress, clientControlPort),
-					RaopRtpChannelType.Control
+					RtpChannelType.Control
 				);
 				m_serverRtpControlChannel = channel;
 				s_logger.info("Launched RTP control service on " + channel.getLocalAddress());
@@ -460,9 +429,9 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 				/* Port number of the client's timing socket. Response includes port number of *our* timing port */
 				final int clientTimingPort = Integer.valueOf(value);
 				final Channel channel = createRtpChannel(
-					Utils.substitutePort(localAddress, RTP_TIMING_PORT),
+					Utils.substitutePort(localAddress, LOCAL_RTP_PORT_FIRST + RtpChannelType.Timing.ordinal()),
 					Utils.substitutePort(remoteAddress, clientTimingPort),
-					RaopRtpChannelType.Timing
+					RtpChannelType.Timing
 				);
 				m_serverRtpTimingChannel = channel;
 				s_logger.info("Launched RTP timing service on " + channel.getLocalAddress());
@@ -476,9 +445,9 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 
 		/* Create audio socket and include it's port in our response */
 		final Channel channel = createRtpChannel(
-			Utils.substitutePort(localAddress, RTP_AUDIO_PORT),
+			Utils.substitutePort(localAddress, LOCAL_RTP_PORT_FIRST),
 			null,
-			RaopRtpChannelType.Audio
+			RtpChannelType.Audio
 		);
 		s_logger.info("Launched RTP audio service on " + channel.getLocalAddress());
 		responseOptions.add("server_port=" + ((InetSocketAddress) channel.getLocalAddress()).getPort());
@@ -593,8 +562,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	 * @param channelType channel type. Determines which handlers are put into the pipeline
 	 * @return open data-gram channel
 	 */
-	private Channel createRtpChannel(final SocketAddress local, final SocketAddress remote, final RaopRtpChannelType channelType)
-	{
+	private Channel createRtpChannel(final InetSocketAddress local, final InetSocketAddress remote, final RtpChannelType channelType) {
 		final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_executionHandler.getExecutor()));
 		bootstrap.setOption("receiveBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(1500));
 		bootstrap.setOption("receiveBufferSize", 1024*1024);
@@ -603,24 +571,45 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 			public ChannelPipeline getPipeline() throws Exception {
 				final ChannelPipeline pipeline = Channels.pipeline();
 				pipeline.addLast("executionHandler", m_executionHandler);
-				pipeline.addLast("exceptionLogger", m_exceptionLoggingHandler);
-				pipeline.addLast("decoder", m_decodeHandler);
-				pipeline.addLast("encoder", m_encodeHandler);
-				//pipeline.addLast("packetLogger", m_packetLoggingHandler);
-				if (channelType.equals(RaopRtpChannelType.Audio))
-					pipeline.addLast("audioReceiver", m_audioReceiveHandler);
-				else
-					pipeline.addLast("controlAndTiming", m_controlAndTimingHandler);
+				pipeline.addLast("decoder", m_rtpDecoder);
+				pipeline.addLast("encoder", m_rtpEncoder);
+				pipeline.addLast("receiverHandler", new RtpReceiveChannelHandler(channelType));
 				return pipeline;
 			}
 		});
 
-		Channel channel = bootstrap.bind(local);
+		final Channel channel = bootstrap.bind(local);
+		synchronized (m_rtpChannels) {
+			m_rtpChannels.add(channel);
+		}
 		if (remote != null)
 			channel.connect(remote);
-		synchronized (m_serverRtpChannels) {
-			m_serverRtpChannels.add(channel);
-		}
 		return channel;
+	}
+
+	private class RtpReceiveChannelHandler extends SimpleChannelUpstreamHandler {
+		private final RtpChannelType m_type;
+
+		public RtpReceiveChannelHandler(RtpChannelType type) {
+			m_type = type;
+		}
+
+		@Override
+		public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
+			final Object msg = e.getMessage();
+			for (ProxyRtspClient client : m_rtspClients) {
+				switch (m_type) {
+					case Audio:
+						client.sendAudioPacket(msg);
+						break;
+					case Control:
+						client.sendControlPacket(msg);
+						break;
+					case Timing:
+						client.sendTimingPacket(msg);
+						break;
+				}
+			}
+		}
 	}
 }

@@ -33,6 +33,7 @@ import org.jboss.netty.channel.group.ChannelGroupFuture;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.oio.OioServerSocketChannelFactory;
 import org.jboss.netty.handler.execution.ExecutionHandler;
+import org.jboss.netty.handler.execution.OrderedMemoryAwareThreadPoolExecutor;
 import org.phlo.AirReceiver.AudioChannel;
 import org.phlo.AirReceiver.HardwareAddressMap;
 import org.phlo.AirReceiver.RaopRtspPipelineFactory;
@@ -87,7 +88,8 @@ public class AirAudioServer {
     private final ArrayList<JmDNS> jmDNSInstances = new ArrayList<>();
     private final HardwareAddressMap hardwareAddresses = new HardwareAddressMap();
     private final ExecutorService executor = Executors.newCachedThreadPool();
-    private final ExecutionHandler executionHandler = new ExecutionHandler(executor);
+    private final ExecutionHandler executionHandler = new ExecutionHandler(
+            new OrderedMemoryAwareThreadPoolExecutor(8, 0, 0));
 
     private final ChannelHandler closeHandler = new SimpleChannelUpstreamHandler() {
         @Override
@@ -112,7 +114,7 @@ public class AirAudioServer {
             return false;
         }
 
-        int count = forwardServers != null ? forwardServers.length : 0;
+        int count = 0;//fixme: forwardServers != null ? forwardServers.length : 0;
         Channel channel = createPlayerServer(audioStream, channelMode, count > 0 ? PRIVATE_PORT : RTSP_PORT);
         if (channel == null)
             return false;
@@ -190,13 +192,13 @@ public class AirAudioServer {
 
     private Channel createPlayerServer(int audioStream, AudioChannel channelMode, int port) {
         RaopRtspPipelineFactory factory = new RaopRtspPipelineFactory(audioStream, channelMode,
-                executionHandler, hardwareAddresses, closeHandler);
+                executor, executionHandler, hardwareAddresses, closeHandler);
         return crateServer(factory, port);
     }
 
     private Channel createProxyServer(InetSocketAddress[] forwardServers, int port) {
         ProxyRtspPipelineFactory factory = new ProxyRtspPipelineFactory(forwardServers,
-                executionHandler, hardwareAddresses, closeHandler);
+                executor, executionHandler, hardwareAddresses, closeHandler);
         return crateServer(factory, port);
     }
 

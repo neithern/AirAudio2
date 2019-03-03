@@ -20,6 +20,7 @@
         android:entryValues="@array/channel_mode_values" />
 
     <MultiSelectListPreference
+        android:enabled="false"
         android:key="servers"
         android:title="@string/play_together" />
 

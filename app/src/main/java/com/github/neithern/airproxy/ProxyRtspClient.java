@@ -40,53 +40,48 @@ import org.jboss.netty.handler.codec.rtsp.RtspResponseStatuses;
 import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.phlo.AirReceiver.ExceptionLoggingHandler;
 import org.phlo.AirReceiver.RaopRtpDecodeHandler;
-import org.phlo.AirReceiver.RaopRtpPacket;
 import org.phlo.AirReceiver.RaopRtspMethods;
 import org.phlo.AirReceiver.RtpEncodeHandler;
 import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 
 public class ProxyRtspClient implements ChannelPipelineFactory {
     private static Logger s_logger = Logger.getLogger("ProxyRtspClient");
 
-    private static final int RTP_AUDIO_PORT = 56407;
-    private static final int RTP_CONTROL_PORT = 56408;
-    private static final int RTP_TIMING_PORT = 56409;
+    enum RtpChannelType { Audio, Control, Timing }
 
-    private final ExecutionHandler m_executionHandler;
+    private final Executor m_executor;
+    private final ExecutionHandler m_execution;
     private final InetSocketAddress m_remoteAddress;
-
-    private final ChannelHandler m_exceptionLoggingHandler = new ExceptionLoggingHandler();
-    private final ChannelHandler m_decodeHandler = new RaopRtpDecodeHandler();
-    private final ChannelHandler m_encodeHandler = new RtpEncodeHandler();
-    private final ChannelHandler m_receiverHandler = new RtpReceiverHandler();
+    private final int m_rtpPortFirst;
+    private final ChannelHandler m_rtpDecoder = new RaopRtpDecodeHandler();
+    private final ChannelHandler m_rtpEncoder = new RtpEncodeHandler();
 
     private Channel m_rtspChannel;
     private Channel m_rtpAudioChannel;
     private Channel m_rtpControlChannel;
     private Channel m_rtpTimingChannel;
-
     private Channel m_upRtpControlChannel;
     private Channel m_upRtpTimingChannel;
 
-    public ProxyRtspClient(ExecutionHandler executionHandler, InetSocketAddress remoteAddress) {
-        m_executionHandler = executionHandler;
+    public ProxyRtspClient(Executor executor, ExecutionHandler execution, InetSocketAddress remoteAddress, int portFirst) {
+        m_executor = executor;
+        m_execution = execution;
         m_remoteAddress = remoteAddress;
+        m_rtpPortFirst = portFirst + 1;
 
-        final ClientBootstrap bootstrap = new ClientBootstrap(new OioClientSocketChannelFactory(m_executionHandler.getExecutor()));
+        final ClientBootstrap bootstrap = new ClientBootstrap(new OioClientSocketChannelFactory(Executors.newSingleThreadExecutor()));
         bootstrap.setOption("tcpNoDelay", true);
         bootstrap.setOption("keepAlive", true);
-        bootstrap.setOption("sendBufferSize", 65536);
-        bootstrap.setOption("receiveBufferSize", 65536);
         bootstrap.setPipelineFactory(this);
-
-        ChannelFuture future = bootstrap.connect(remoteAddress);
-        future.awaitUninterruptibly();
-        m_rtspChannel = future.getChannel();
+        bootstrap.bind(new InetSocketAddress("0.0.0.0", portFirst));
+        m_rtspChannel = bootstrap.connect(remoteAddress).getChannel();
     }
 
     public void close() {
@@ -122,8 +117,8 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     }
 
     public ChannelFuture sendRequest(HttpRequest request) {
+        final HttpRequest newReq = copyRequest(request);
         if (RaopRtspMethods.SETUP.equals(request.getMethod())) {
-            final HttpRequest newReq = copyRequest(request);
             final String[] options = newReq.headers().get(ProxyServerHandler.HeaderTransport).split(";");
             for (int i = 0; i < options.length; i++) {
                 final String opt = options[i];
@@ -131,52 +126,65 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
                 if (!matcher.matches())
                     continue;
                 final String key = matcher.group(1);
-                if ("control_port".equals(key))
-                    options[i] = key + '=' + Integer.toString(RTP_CONTROL_PORT);
-                else if ("timing_port".equals(key))
-                    options[i] = key + '=' + Integer.toString(RTP_TIMING_PORT);
+                if ("control_port".equals(key)) {
+                    options[i] = key + "=" + (m_rtpPortFirst + RtpChannelType.Control.ordinal());
+                } else if ("timing_port".equals(key)) {
+                    options[i] = key + "=" + (m_rtpPortFirst + RtpChannelType.Timing.ordinal());
+                }
             }
             newReq.headers().set(ProxyServerHandler.HeaderTransport, Utils.buildTransportOptions(Arrays.asList(options)));
-            request = newReq;
         }
-        s_logger.fine("request to " + m_remoteAddress + ": " + request);
-        return writeMessage(m_rtspChannel, request);
+        s_logger.info("send request to " + m_remoteAddress + ": " + newReq);
+        return m_rtspChannel.write(newReq);
     }
 
-    public void sendAudioPacket(RaopRtpPacket.Audio packet) {
-        writeMessage(m_rtpAudioChannel, packet);
+    public ChannelFuture sendAudioPacket(Object packet) {
+        return writeMessage(m_rtpAudioChannel, packet);
     }
 
-    public void sendSyncPacket(RaopRtpPacket.Sync packet) {
-        writeMessage(m_rtpControlChannel, packet);
+    public ChannelFuture sendControlPacket(Object packet) {
+        return writeMessage(m_rtpControlChannel, packet);
     }
 
-    public void sendTimingPacket(RaopRtpPacket.Timing packet) {
-        writeMessage(m_rtpTimingChannel, packet);
+    public ChannelFuture sendTimingPacket(Object packet) {
+        return writeMessage(m_rtpTimingChannel, packet);
     }
+
 
     @Override
     public ChannelPipeline getPipeline() throws Exception {
         final ChannelPipeline pipeline = Channels.pipeline();
+        pipeline.addLast("exceptionLogger", new ExceptionLoggingHandler());
         pipeline.addLast("encoder", new RtspRequestEncoder());
         pipeline.addLast("decoder", new RtspResponseDecoder());
-        pipeline.addLast("response", new SimpleChannelUpstreamHandler() {
-            @Override
-            public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-                final Object msg = e.getMessage();
-                if (msg instanceof HttpResponse) {
-                    final HttpResponse response = (HttpResponse) msg;
-                    s_logger.info("response from " + m_remoteAddress + ": " + msg);
-                    if (RtspResponseStatuses.OK.equals(response.getStatus())
-                            && response.headers().contains(ProxyServerHandler.HeaderTransport))
-                        onSetupResponseReceived(ctx, response);
-                }
-            }
-        });
+        pipeline.addLast("response", new RtspResponseHandler());
         return pipeline;
     }
 
-    private void onSetupResponseReceived(ChannelHandlerContext ctx, HttpResponse response) throws Exception {
+    private Channel createRtpChannel(InetSocketAddress localAddress, int remotePort, final RtpChannelType channelType) {
+        final OioDatagramChannelFactory channelFactory = new OioDatagramChannelFactory(m_executor);
+        final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(channelFactory);
+        bootstrap.setOption("receiveBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(1500));
+        bootstrap.setOption("receiveBufferSize", 1048576);
+        bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
+            @Override
+            public ChannelPipeline getPipeline() throws Exception {
+                final ChannelPipeline pipeline = Channels.pipeline();
+                pipeline.addLast("executionHandler", m_execution);
+                pipeline.addLast("decoder", m_rtpDecoder);
+                pipeline.addLast("encoder", m_rtpEncoder);
+                pipeline.addLast("receiverHandler", new RtpReceiverHandler(channelType));
+                return pipeline;
+            }
+        });
+
+        Channel channel = bootstrap.bind(Utils.substitutePort(localAddress, m_rtpPortFirst + channelType.ordinal()));
+        channel.connect(Utils.substitutePort(m_remoteAddress, remotePort));
+        s_logger.info("create rtp channel " + channel.getLocalAddress() + " for " + m_remoteAddress + ": " + channelType);
+        return channel;
+    }
+
+    private void onSetupResponseReceived(ChannelHandlerContext ctx, HttpResponse response) {
         final InetSocketAddress localAddress = (InetSocketAddress) ctx.getChannel().getLocalAddress();
         final String[] options = response.headers().get(ProxyServerHandler.HeaderTransport).split(";");
         for (String opt : options) {
@@ -188,38 +196,13 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             if ("server_port".equals(key) || "control_port".equals(key) || "timing_port".equals(key)) {
                 final int remotePort = Integer.valueOf(value);
                 if ("server_port".equals(key))
-                    m_rtpAudioChannel = createRtpChannel(localAddress, RTP_AUDIO_PORT, remotePort);
+                    m_rtpAudioChannel = createRtpChannel(localAddress, remotePort, RtpChannelType.Audio);
                 else if ("control_port".equals(key))
-                    m_rtpControlChannel = createRtpChannel(localAddress, RTP_CONTROL_PORT, remotePort);
+                    m_rtpControlChannel = createRtpChannel(localAddress, remotePort, RtpChannelType.Control);
                 else if ("timing_port".equals(key))
-                    m_rtpTimingChannel = createRtpChannel(localAddress, RTP_TIMING_PORT, remotePort);
-                s_logger.info("create rtp channel for " + m_remoteAddress + ": " + key);
+                    m_rtpTimingChannel = createRtpChannel(localAddress, remotePort, RtpChannelType.Timing);
             }
         }
-    }
-
-    private Channel createRtpChannel(InetSocketAddress localAddr, int localPort, int remotePort) throws Exception {
-        final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_executionHandler.getExecutor()));
-        bootstrap.setOption("receiveBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(1500));
-        bootstrap.setOption("receiveBufferSize", 1048576);
-        bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-            @Override
-            public ChannelPipeline getPipeline() throws Exception {
-                final ChannelPipeline pipeline = Channels.pipeline();
-                pipeline.addLast("executionHandler", m_executionHandler);
-                pipeline.addLast("exceptionLogger", m_exceptionLoggingHandler);
-                pipeline.addLast("decoder", m_decodeHandler);
-                pipeline.addLast("encoder", m_encodeHandler);
-                pipeline.addLast("receiver", m_receiverHandler);
-                return pipeline;
-            }
-        });
-
-        Channel channel = bootstrap.bind(Utils.substitutePort(localAddr, localPort));
-
-        final InetSocketAddress remoteAddress = Utils.substitutePort(m_remoteAddress, remotePort);
-        channel.connect(remoteAddress);
-        return channel;
     }
 
     private ChannelFuture writeMessage(Channel channel, Object message) {
@@ -231,18 +214,37 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
         }
     }
 
+    private class RtspResponseHandler extends SimpleChannelUpstreamHandler {
+        @Override
+        public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
+            final Object msg = e.getMessage();
+            if (msg instanceof HttpResponse) {
+                final HttpResponse response = (HttpResponse) msg;
+                s_logger.info("receive response from " + m_remoteAddress + ": " + msg);
+                if (RtspResponseStatuses.OK.equals(response.getStatus())
+                        && response.headers().contains(ProxyServerHandler.HeaderTransport))
+                    onSetupResponseReceived(ctx, response);
+            }
+        }
+    }
+
     private class RtpReceiverHandler extends SimpleChannelUpstreamHandler {
+        private final RtpChannelType m_type;
+
+        public RtpReceiverHandler(RtpChannelType type) {
+            m_type = type;
+        }
+
         @Override
         public void messageReceived(final ChannelHandlerContext ctx, final MessageEvent evt) throws Exception {
-            synchronized (this) {
-                final Object message = evt.getMessage();
-                if (message instanceof RaopRtpPacket.RetransmitRequest) {
-                    writeMessage(m_upRtpControlChannel, message);
-                } else if (message instanceof RaopRtpPacket.TimingRequest) {
-                    writeMessage(m_upRtpTimingChannel, message);
-                }
+            final Object msg = evt.getMessage();
+            if (m_type == RtpChannelType.Control) {
+                writeMessage(m_upRtpControlChannel, msg);
+            } else if (m_type == RtpChannelType.Timing) {
+                writeMessage(m_upRtpTimingChannel, msg);
+            } else {
+                super.messageReceived(ctx, evt);
             }
-            super.messageReceived(ctx, evt);
         }
     }
 

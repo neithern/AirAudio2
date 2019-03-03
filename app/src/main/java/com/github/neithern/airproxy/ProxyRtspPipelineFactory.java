@@ -34,17 +34,21 @@ import org.phlo.AirReceiver.RtspLoggingHandler;
 import org.phlo.AirReceiver.RtspUnsupportedResponseHandler;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.Executor;
 
 public class ProxyRtspPipelineFactory implements ChannelPipelineFactory {
+    private final Executor m_executor;
     private final ExecutionHandler m_executionHandler;
     private final HardwareAddressMap m_hardwareAddressMap;
     private final ChannelHandler m_closeOnShutdownHandler;
     private final InetSocketAddress[] m_rtspServerAddresses;
 
     public ProxyRtspPipelineFactory(InetSocketAddress[] rtspServerAddresses,
+                                    Executor executor,
                                     ExecutionHandler executionHandler,
                                     HardwareAddressMap hardwareAddressMap,
                                     ChannelHandler closeOnShutdownHandler) {
+        m_executor = executor;
         m_executionHandler = executionHandler;
         m_hardwareAddressMap = hardwareAddressMap;
         m_closeOnShutdownHandler = closeOnShutdownHandler;
@@ -64,7 +68,7 @@ public class ProxyRtspPipelineFactory implements ChannelPipelineFactory {
         pipeline.addLast("challengeResponse", new RaopRtspChallengeResponseHandler(m_hardwareAddressMap));
         pipeline.addLast("header", new RaopRtspHeaderHandler());
         pipeline.addLast("options", new RaopRtspOptionsHandler());
-        pipeline.addLast("proxy", new ProxyServerHandler(m_executionHandler, m_rtspServerAddresses));
+        pipeline.addLast("proxy", new ProxyServerHandler(m_executor, m_executionHandler, m_rtspServerAddresses));
         pipeline.addLast("unsupportedResponse", new RtspUnsupportedResponseHandler());
         return pipeline;
     }
