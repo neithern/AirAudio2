@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">AirAudio</string>
+    <string name="app_name">AirAudio2</string>
     <string name="channel_mode">声道模式</string>
     <string name="channel_stereo">播放立体声</string>
     <string name="channel_only_left">仅播放左声道</string>
