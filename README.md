@@ -1,4 +1,4 @@
-# AirAudio
+# AirAudio2
 AirTunes server running on Android devices, based on https://github.com/fgp/AirReceiver.
 
 Main features:
