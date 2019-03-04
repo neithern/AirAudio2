@@ -38,7 +38,7 @@ public class RaopRtspChallengeResponseHandler extends SimpleChannelHandler
 	private final Cipher m_rsaPkCS1PaddingCipher = AirTunesCrytography.getCipher("RSA/None/PKCS1Padding");
 
 	private byte[] m_challenge;
-	private InetAddress m_localAddress;
+	private InetSocketAddress m_localAddress;
 
 	public RaopRtspChallengeResponseHandler(final HardwareAddressMap hardwareAddressMap) {
 		m_hardwareAddressMap = hardwareAddressMap;
@@ -63,7 +63,7 @@ public class RaopRtspChallengeResponseHandler extends SimpleChannelHandler
 				 * Both are required to compute the response
 				 */
 				m_challenge = challenge;
-				m_localAddress = ((InetSocketAddress)ctx.getChannel().getLocalAddress()).getAddress();
+				m_localAddress = (InetSocketAddress) ctx.getChannel().getLocalAddress();
 			}
 			else {
 				/* Forget last challenge */
@@ -106,7 +106,7 @@ public class RaopRtspChallengeResponseHandler extends SimpleChannelHandler
 		final ByteBuffer sigData = ByteBuffer.allocate(16 /* challenge */ + 16 /* ipv6 address */ + 6 /* hw address*/);
 
 		sigData.put(m_challenge);
-		sigData.put(m_localAddress.getAddress());
+		sigData.put(m_localAddress.getAddress().getAddress());
 		sigData.put(m_hardwareAddressMap.get(m_localAddress));
 		while (sigData.hasRemaining())
 			sigData.put((byte)0);

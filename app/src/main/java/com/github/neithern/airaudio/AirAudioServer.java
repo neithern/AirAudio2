@@ -155,31 +155,37 @@ public class AirAudioServer {
                 if (addr.isLoopbackAddress() || addr.isLinkLocalAddress())
                     continue;
 
-                hardwareAddresses.put(addr, hwAddr);
-                // remove address if duplicated
-                serverSet.remove(new InetSocketAddress(addr, proxyPort));
-
                 try {
                     JmDNS jmDNS = JmDNS.create(addr, playerName + "-jmdns");
                     jmDNSInstances.add(jmDNS);
 
                     if (playerPort != 0) {
+                        InetSocketAddress playerAddress = new InetSocketAddress(addr, playerPort);
+                        hardwareAddresses.put(playerAddress, hwAddr);
                         ServiceInfo serviceInfo = ServiceInfo.create(AIRPLAY_SERVICE_TYPE,
                                 toHexString(hwAddr) + "@" + playerName, playerPort,
                                 0, 0,AIRPLAY_SERVICE_PROPERTIES);
                         jmDNS.registerService(serviceInfo);
-                        Log.d(TAG, "Register player server " + serviceInfo.getName() + " on " + addr + ':' + playerPort);
+                        Log.d(TAG, "Register player server " + serviceInfo.getName() + " on " + playerAddress);
                     }
                     if (proxyPort != 0) {
+                        InetSocketAddress proxyAddress = new InetSocketAddress(addr, proxyPort);
+                        // remove address if duplicated
+                        serverSet.remove(proxyAddress);
+
+                        // iOS/Mac show only one server on the same device if there are same hardware address,
+                        // so make a fake hardware address for the proxy server.
+                        byte[] hwAddr2 = playerPort != 0 ? makeFakeHwAddress(hwAddr) : hwAddr;
+                        hardwareAddresses.put(proxyAddress, hwAddr2);
                         ServiceInfo serviceInfo = ServiceInfo.create(AIRPLAY_SERVICE_TYPE,
-                                toHexString(hwAddr) + "@" + groupName, proxyPort,
+                                toHexString(hwAddr2) + "@" + groupName, proxyPort,
                                 0, 0, AIRPLAY_SERVICE_PROPERTIES);
                         jmDNS.registerService(serviceInfo);
-                        Log.d(TAG, "Register group server " + serviceInfo.getName() + " on " + addr + ':' + proxyPort);
+                        Log.d(TAG, "Register group server " + serviceInfo.getName() + " on " + proxyAddress);
                     }
                     running = true;
                 } catch (Exception e) {
-                    Log.e(TAG, "Register server failed on " + addr + addr + ':' + playerPort, e);
+                    Log.e(TAG, "Register server failed on " + addr, e);
                 }
             }
         }
@@ -254,16 +260,24 @@ public class AirAudioServer {
         }
     }
 
+    public static byte[] makeFakeHwAddress(byte[] hwAddr) {
+        byte[] hwNew = new byte[hwAddr.length];
+        for (int i = 0; i < hwNew.length; i++)
+            hwNew[i] = (byte) (hwAddr[i] + 1);
+        return hwNew;
+    }
+
     /**
      * Parse address like: 127.0.0.1:80
      */
     public static InetSocketAddress parseAddress(String addressAndPort) {
         try {
-            int pos = addressAndPort.lastIndexOf(':');
-            if (pos == -1)
+            int pos = addressAndPort.charAt(0) == '/' ? 1 : 0;
+            int pos2 = addressAndPort.lastIndexOf(':');
+            if (pos2 == -1)
                 return null;
-            return new InetSocketAddress(addressAndPort.substring(0, pos),
-                    Integer.valueOf(addressAndPort.substring(pos + 1)));
+            return new InetSocketAddress(addressAndPort.substring(pos, pos2),
+                    Integer.valueOf(addressAndPort.substring(pos2 + 1)));
         } catch (Exception e) {
             e.printStackTrace();
         }
