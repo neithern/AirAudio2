@@ -45,6 +45,7 @@ import org.phlo.AirReceiver.ProtocolException;
 import org.phlo.AirReceiver.RaopRtpAudioAlacDecodeHandler;
 import org.phlo.AirReceiver.RaopRtpAudioDecryptionHandler;
 import org.phlo.AirReceiver.RaopRtpDecodeHandler;
+import org.phlo.AirReceiver.RaopRtpPacket;
 import org.phlo.AirReceiver.RaopRtpRetransmitRequestHandler;
 import org.phlo.AirReceiver.RaopRtpTimingHandler;
 import org.phlo.AirReceiver.RaopRtspMethods;
@@ -53,19 +54,16 @@ import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executor;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
 
 /**
  * Handles the configuration, creation and destruction of RTP channels.
@@ -81,14 +79,18 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	private static final int LOCAL_RTP_PORT_FIRST = 56400;
 	private static final int PROXY_PORT_FIRST = 56500;
 
+	private static final int RESPONSE_TIMEOUT = 3000;
+
 	protected static final String HeaderTransport = "Transport";
 	protected static final String HeaderSession = "Session";
 
 	/**
 	 * Executor service used for the RTP channels
 	 */
-	private final Executor m_executor;
-	private final ExecutionHandler m_executionHandler;
+	protected final Executor m_executor;
+	protected final ExecutionHandler m_executionHandler;
+	protected final ConcurrentHashMap<Long, Channel> m_timingChannelMap = new ConcurrentHashMap<>();
+
 	private final ChannelHandler m_rtpDecoder = new RaopRtpDecodeHandler();
 	private final ChannelHandler m_rtpEncoder = new RtpEncodeHandler();
 
@@ -120,6 +122,8 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		m_controlChannel = null;
 		m_timingChannel = null;
 
+		m_timingChannelMap.clear();
+
 		for (ProxyRtspClient client : m_rtspClients)
 			client.close();
 		m_rtspClients.clear();
@@ -128,22 +132,32 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	private void createRtspClients() {
 		int portFirst = PROXY_PORT_FIRST;
 		for (InetSocketAddress address : m_rtspServerAddresses) {
-			final ProxyRtspClient client = new ProxyRtspClient(m_executor, m_executionHandler, address, portFirst);
+			final ProxyRtspClient client = new ProxyRtspClient(this, address, portFirst);
 			m_rtspClients.add(client);
 			portFirst += 4;
 		}
 	}
 
-	private void forwardRtspRequest(ChannelHandlerContext ctx, HttpRequest req) {
-		final ArrayList<ChannelFuture> futures = new ArrayList<>();
+	private void forwardRtspRequest(ChannelHandlerContext ctx, HttpRequest req) throws InterruptedException {
 		for (ProxyRtspClient client : m_rtspClients) {
-			ChannelFuture future = client.sendRequest(req);
-			if (future != null)
-				futures.add(future);
+			client.sendRequest(req);
 		}
-		for (ChannelFuture future : futures) {
-			future.awaitUninterruptibly();
-		}
+
+		/* Wait all clients get response with next CSeq */
+		final int cSeq = Integer.valueOf(req.headers().get("CSeq"));
+		final int count = m_rtspClients.size();
+		final ProxyRtspClient[] clients = m_rtspClients.toArray(new ProxyRtspClient[count]);
+		final long target = (1L << count) - 1;
+		long value = 0;
+		final long end = System.currentTimeMillis() + RESPONSE_TIMEOUT;
+		do {
+			for (int i = 0; i < count; i++) {
+				if (clients[i].getLastCSeq() == cSeq)
+					value |= 1L << i;
+			}
+			if (value != target)
+				Thread.sleep(1);
+		} while (value != target && System.currentTimeMillis() < end);
 	}
 
 	@Override
@@ -170,19 +184,19 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 			setupReceived(ctx, req);
 			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.RECORD.equals(method)) {
+			forwardRtspRequest(ctx, req);
 			recordReceived(ctx, req);
-			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.FLUSH.equals(method)) {
+			forwardRtspRequest(ctx, req);
 			flushReceived(ctx, req);
-			forwardRtspRequest(ctx, req);
-		} else if (RaopRtspMethods.TEARDOWN.equals(method)) {
-			teardownReceived(ctx, req);
-			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.SET_PARAMETER.equals(method)) {
 			setParameterReceived(ctx, req);
 			forwardRtspRequest(ctx, req);
 		} else if (RaopRtspMethods.GET_PARAMETER.equals(method)) {
 			getParameterReceived(ctx, req);
+		} else if (RaopRtspMethods.TEARDOWN.equals(method)) {
+			teardownReceived(ctx, req);
+			forwardRtspRequest(ctx, req);
 		} else {
 			super.messageReceived(ctx, evt);
 		}
@@ -267,8 +281,8 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		/* Get SDP stream information */
 		final String dsp = req.getContent().toString(s_ascii_charset).replace("\r", "");
 
-		SecretKey aesKey = null;
-		IvParameterSpec aesIv = null;
+		//SecretKey aesKey = null;
+		//IvParameterSpec aesIv = null;
 		int alacFormatIndex = -1;
 		int audioFormatIndex = -1;
 		int descriptionFormatIndex = -1;
@@ -589,18 +603,24 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 		@Override
 		public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
 			final Object msg = evt.getMessage();
-			for (ProxyRtspClient client : m_rtspClients) {
-				switch (m_type) {
-					case Audio:
+			switch (m_type) {
+				case Audio:
+					for (ProxyRtspClient client : m_rtspClients)
 						client.sendAudioPacket(msg);
-						break;
-					case Control:
+					break;
+				case Control:
+					for (ProxyRtspClient client : m_rtspClients)
 						client.sendControlPacket(msg);
-						break;
-					case Timing:
-						client.sendTimingPacket(msg);
-						break;
-				}
+					break;
+				case Timing:
+					if (msg instanceof RaopRtpPacket.TimingResponse) {
+						/* TimingResponse's ReferenceTime is same as TimingRequest's SendTime */
+						long key = ((RaopRtpPacket.TimingResponse) msg).getReferenceTime().getAsLong();
+						Channel channel = m_timingChannelMap.remove(key);
+						if (channel != null)
+							channel.write(msg);
+					}
+					break;
 			}
 		}
 	}

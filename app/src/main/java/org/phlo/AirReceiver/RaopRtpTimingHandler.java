@@ -53,6 +53,7 @@ public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 				timingRequestPacket.getReceivedTime().setDouble(0); /* Set by the source */
 				timingRequestPacket.getReferenceTime().setDouble(0); /* Set by the source */
 				timingRequestPacket.getSendTime().setDouble(m_audioClock.getNowSecondsTime());
+				//s_logger.info("send request: " + timingRequestPacket.getSendTime().getAsLong());
 
 				m_channel.write(timingRequestPacket);
 				try {
@@ -178,8 +179,9 @@ public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 		final double remoteSecondsOffsetPrevious = (!m_remoteSecondsOffset.isEmpty() ? m_remoteSecondsOffset.get() : 0.0);
 		m_remoteSecondsOffset.add(remoteSecondsOffset, weight);
 		final double secondsTimeAdjustment = m_remoteSecondsOffset.get() - remoteSecondsOffsetPrevious;
+		s_logger.finest("Timing response weight " + weight + " offset " + remoteSecondsOffset + " the averaged offset " + secondsTimeAdjustment + " the new averaged offset " + m_remoteSecondsOffset.get());
 
-		s_logger.finest("Timing response with weight " + weight + " indicated offset " + remoteSecondsOffset + " thereby adjusting the averaged offset by " + secondsTimeAdjustment + " leading to the new averaged offset " + m_remoteSecondsOffset.get());
+		//s_logger.info("send response: " + timingResponsePacket.getReferenceTime().getAsLong() + ", reference " + timingResponsePacket.getSendTime().getDouble() + ", received " + timingResponsePacket.getReceivedTime().getDouble());
 	}
 
 	private synchronized void syncReceived(final RaopRtpPacket.Sync syncPacket) {
@@ -203,6 +205,7 @@ public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 			);
 			s_logger.warning("Times synchronized, cannot correct latency of sync packet");
 		}
+		//s_logger.info("sync: " + syncPacket.getTime().getDouble() + ", "  + syncPacket.getTimeStamp() + ", " + syncPacket.getTimeStampMinusLatency());
 	}
 
 	/**

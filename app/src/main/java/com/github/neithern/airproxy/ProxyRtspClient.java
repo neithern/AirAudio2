@@ -39,17 +39,17 @@ import org.jboss.netty.handler.codec.http.HttpResponse;
 import org.jboss.netty.handler.codec.rtsp.RtspRequestEncoder;
 import org.jboss.netty.handler.codec.rtsp.RtspResponseDecoder;
 import org.jboss.netty.handler.codec.rtsp.RtspResponseStatuses;
-import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.phlo.AirReceiver.ExceptionLoggingHandler;
 import org.phlo.AirReceiver.RaopRtpDecodeHandler;
+import org.phlo.AirReceiver.RaopRtpPacket;
 import org.phlo.AirReceiver.RaopRtspMethods;
 import org.phlo.AirReceiver.RtpEncodeHandler;
 import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 
@@ -58,8 +58,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
 
     enum RtpChannelType { Audio, Control, Timing }
 
-    private final Executor m_executor;
-    private final ExecutionHandler m_execution;
+    private final ProxyServerHandler m_server;
     private final InetSocketAddress m_remoteAddress;
     private final int m_rtpPortFirst;
     private final ChannelHandler m_rtpDecoder = new RaopRtpDecodeHandler();
@@ -73,9 +72,8 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     private Channel m_upRtpControlChannel;
     private Channel m_upRtpTimingChannel;
 
-    public ProxyRtspClient(Executor executor, ExecutionHandler execution, InetSocketAddress remoteAddress, int portFirst) {
-        m_executor = executor;
-        m_execution = execution;
+    public ProxyRtspClient(ProxyServerHandler server, InetSocketAddress remoteAddress, int portFirst) {
+        m_server = server;
         m_remoteAddress = remoteAddress;
         m_rtpPortFirst = portFirst + 1;
 
@@ -132,7 +130,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             newReq.headers().set(ProxyServerHandler.HeaderTransport, Utils.buildTransportOptions(Arrays.asList(options)));
         }
         s_logger.info("send request to " + m_remoteAddress + ": " + newReq);
-        return m_rtspChannel.write(newReq);
+        return writeMessage(m_rtspChannel, newReq);
     }
 
     public ChannelFuture sendAudioPacket(Object packet) {
@@ -142,11 +140,6 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     public ChannelFuture sendControlPacket(Object packet) {
         return writeMessage(m_rtpControlChannel, packet);
     }
-
-    public ChannelFuture sendTimingPacket(Object packet) {
-        return writeMessage(m_rtpTimingChannel, packet);
-    }
-
 
     @Override
     public ChannelPipeline getPipeline() throws Exception {
@@ -159,7 +152,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     }
 
     private Channel createRtpChannel(InetSocketAddress localAddress, int remotePort, final RtpChannelType channelType) {
-        final OioDatagramChannelFactory channelFactory = new OioDatagramChannelFactory(m_executor);
+        final OioDatagramChannelFactory channelFactory = new OioDatagramChannelFactory(m_server.m_executor);
         final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(channelFactory);
         bootstrap.setOption("receiveBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(1500));
         bootstrap.setOption("receiveBufferSize", 1048576);
@@ -167,7 +160,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             @Override
             public ChannelPipeline getPipeline() throws Exception {
                 final ChannelPipeline pipeline = Channels.pipeline();
-                pipeline.addLast("executionHandler", m_execution);
+                pipeline.addLast("executionHandler", m_server.m_executionHandler);
                 pipeline.addLast("decoder", m_rtpDecoder);
                 pipeline.addLast("encoder", m_rtpEncoder);
                 pipeline.addLast("receiverHandler", new RtpReceiverHandler(channelType));
@@ -214,12 +207,19 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
         }
     }
 
+    private final AtomicInteger m_lastCSeq = new AtomicInteger();
+
+    public int getLastCSeq() {
+        return m_lastCSeq.get();
+    }
+
     private class RtspResponseHandler extends SimpleChannelUpstreamHandler {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
             final Object msg = e.getMessage();
             if (msg instanceof HttpResponse) {
                 final HttpResponse response = (HttpResponse) msg;
+                m_lastCSeq.set(Integer.valueOf(response.headers().get("CSeq")));
                 s_logger.info("receive response from " + m_remoteAddress + ": " + msg);
                 if (RtspResponseStatuses.OK.equals(response.getStatus())
                         && response.headers().contains(ProxyServerHandler.HeaderTransport))
@@ -241,6 +241,11 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             if (m_type == RtpChannelType.Control) {
                 writeMessage(m_upRtpControlChannel, msg);
             } else if (m_type == RtpChannelType.Timing) {
+                final Channel channel = m_rtpTimingChannel;
+                if (channel != null && msg instanceof RaopRtpPacket.TimingRequest) {
+                    final long key = ((RaopRtpPacket.TimingRequest) msg).getSendTime().getAsLong();
+                    m_server.m_timingChannelMap.put(key, channel);
+                }
                 writeMessage(m_upRtpTimingChannel, msg);
             } else {
                 super.messageReceived(ctx, evt);

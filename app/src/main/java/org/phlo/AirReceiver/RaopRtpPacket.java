@@ -94,6 +94,10 @@ public abstract class RaopRtpPacket extends RtpPacket {
 			m_buffer = buffer;
 		}
 
+		public long getAsLong() {
+			return m_buffer.getLong(0);
+		}
+
 		public long getSeconds() {
 			return getBeUInt(m_buffer, 0);
 		}
