@@ -2,10 +2,12 @@ package com.github.neithern.airaudio;
 
 import android.app.ActionBar;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.Build;
@@ -142,11 +144,7 @@ public class MainActivity extends PreferenceActivity {
         serverSwitch.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                boolean on = serverSwitch.isChecked();
-                Intent intent = new Intent(MainActivity.this, AirAudioService.class);
-                intent.setAction(on ? Intent.ACTION_DEFAULT : Intent.ACTION_SHUTDOWN);
-                startService(intent);
-                serverSwitch.setEnabled(false);
+                enableService(serverSwitch.isChecked());
             }
         });
 
@@ -154,10 +152,16 @@ public class MainActivity extends PreferenceActivity {
         filter.addAction(AirAudioService.BROADCAST_SERVER_STATE);
         registerReceiver(receiver, filter);
 
-        if (AirAudioServer.instance().isRunning())
+        if (AirAudioServer.instance().isRunning()) {
             serverSwitch.setChecked(true);
-        else
-            AirAudioService.start(this, extras);
+        } else try {
+            ComponentName component = new ComponentName(this, AirAudioReceiver.class);
+            int state = getPackageManager().getComponentEnabledSetting(component);
+            if (state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED)
+                AirAudioService.start(this, extras);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -165,6 +169,22 @@ public class MainActivity extends PreferenceActivity {
         discovery.close();
         unregisterReceiver(receiver);
         super.onDestroy();
+    }
+
+    private void enableService(boolean enabled) {
+        Intent intent = new Intent(MainActivity.this, AirAudioService.class);
+        intent.setAction(enabled ? Intent.ACTION_DEFAULT : Intent.ACTION_SHUTDOWN);
+        startService(intent);
+        serverSwitch.setEnabled(false);
+
+        try {
+            ComponentName component = new ComponentName(this, AirAudioReceiver.class);
+            getPackageManager().setComponentEnabledSetting(component,
+                    enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void restartService() {
