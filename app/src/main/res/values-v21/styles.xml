@@ -1,0 +1,12 @@
+<resources>
+
+    <style name="Theme.Default" parent="@android:style/Theme.Material.Light.DarkActionBar">
+        <item name="android:actionBarPopupTheme">@android:style/ThemeOverlay.Material.Light</item>
+        <item name="android:actionModeBackground">?android:colorPrimary</item>
+        <item name="android:colorPrimary">@color/colorPrimary</item>
+        <item name="android:colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="android:colorAccent">@color/colorAccent</item>
+        <item name="android:popupMenuStyle">?android:attr/actionOverflowMenuStyle</item>
+    </style>
+
+</resources>

@@ -6,8 +6,8 @@
     <string name="channel_only_right">Only right</string>
     <string name="group_disabled">Disabled</string>
     <string name="group_enabled">Enabled</string>
-    <string name="group_mode">Group play mode</string>
-    <string name="group_name">Group name</string>
+    <string name="group_mode">Virtual group server</string>
+    <string name="group_name">Group server name</string>
     <string name="group_speaks">Speaks</string>
     <string name="not_specified">(Not specified)</string>
     <string name="self">(Self)</string>

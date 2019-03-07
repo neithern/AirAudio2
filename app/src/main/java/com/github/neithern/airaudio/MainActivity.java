@@ -6,6 +6,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.os.Build;
 import android.os.Bundle;
 import android.preference.MultiSelectListPreference;
 import android.preference.Preference;
@@ -16,7 +19,9 @@ import android.view.View;
 import android.widget.Switch;
 
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.Set;
+import java.util.TimeZone;
 
 import static com.github.neithern.airaudio.AirAudioService.EXTRA_GROUP_NAME;
 import static com.github.neithern.airaudio.AirAudioService.EXTRA_PLAYER_NAME;
@@ -74,6 +79,23 @@ public class MainActivity extends PreferenceActivity {
             updateServerList();
         }
     };
+
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        final String zoneId = TimeZone.getDefault().getID();
+        if (zoneId != null && (zoneId.equals("Asia/Shanghai") || zoneId.equals("Asia/Beijing"))) {
+            final Resources res = newBase.getResources();
+            final Configuration config = res.getConfiguration();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+                config.setLocale(Locale.CHINESE);
+                newBase = newBase.createConfigurationContext(config);
+            } else {
+                config.locale = Locale.CHINESE;
+                res.updateConfiguration(config, res.getDisplayMetrics());
+            }
+        }
+        super.attachBaseContext(newBase);
+    }
 
     @Override
     protected void onCreate(Bundle savedState) {
