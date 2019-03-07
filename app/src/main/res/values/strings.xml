@@ -6,12 +6,11 @@
     <string name="channel_only_right">Only right</string>
     <string name="group_disabled">Disabled</string>
     <string name="group_enabled">Enabled</string>
-    <string name="group_mode">Virtual group server</string>
-    <string name="group_name">Group server name</string>
-    <string name="group_speaks">Speaks</string>
+    <string name="group_mode">Virtual group speaker</string>
+    <string name="group_name">Group speaker name</string>
+    <string name="group_speakers">Speak members</string>
     <string name="not_specified">(Not specified)</string>
-    <string name="self">(Self)</string>
-    <string name="server_name">Server name</string>
+    <string name="speaker_name">Speak name</string>
     <string name="stream_type">Audio stream type</string>
     <string name="stream_music">Music</string>
     <string name="stream_ring">Ring</string>

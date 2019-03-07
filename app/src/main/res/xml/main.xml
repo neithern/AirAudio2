@@ -3,7 +3,7 @@
 
     <EditTextPreference
         android:key="name"
-        android:title="@string/server_name" />
+        android:title="@string/speaker_name" />
 
     <com.github.neithern.airaudio.IntegerListPreference
         android:key="output"
@@ -29,7 +29,7 @@
 
         <MultiSelectListPreference
             android:key="group_addresses"
-            android:title="@string/group_speaks" />
+            android:title="@string/group_speakers" />
 
     </PreferenceScreen>
 

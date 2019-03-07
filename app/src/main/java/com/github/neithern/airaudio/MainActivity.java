@@ -66,8 +66,6 @@ public class MainActivity extends PreferenceActivity {
         @Override
         public void onServiceAdded(String name, String address, boolean self) {
             if (lookupName(address) == null) {
-                if (self)
-                    name = name + getString(R.string.self);
                 deviceNames.add(name);
                 deviceAddresses.add(address);
             }
