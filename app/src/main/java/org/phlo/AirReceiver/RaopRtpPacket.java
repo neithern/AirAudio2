@@ -149,6 +149,10 @@ public abstract class RaopRtpPacket extends RtpPacket {
 			return new NtpTime(getBuffer().slice(RaopRtpPacket.Length + 4, 8));
 		}
 
+		public static NtpTime getReferenceTime(ChannelBuffer buffer) {
+			return new NtpTime(buffer.slice(RaopRtpPacket.Length + 4, 8));
+		}
+
 		/**
 		 * The time at which a {@link TimingRequest} was received. Filled out
 		 * by iTunes/iOS.
@@ -165,6 +169,10 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 */
 		public NtpTime getSendTime() {
 			return new NtpTime(getBuffer().slice(RaopRtpPacket.Length + 20, 8));
+		}
+
+		public static NtpTime getSendTime(ChannelBuffer buffer) {
+			return new NtpTime(buffer.slice(RaopRtpPacket.Length + 20, 8));
 		}
 
 		@Override
@@ -471,7 +479,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 
 			s.append(" "); s.append("ts="); s.append(getTimeStamp());
 			s.append(" "); s.append("ssrc="); s.append(getSSrc());
-			s.append(" "); s.append("<"); s.append(getPayload().capacity()); s.append(" bytes payload>");
+			s.append(" "); s.append("<"); s.append(getLength() - Length); s.append(" bytes payload>");
 
 			return s.toString();
 		}
@@ -564,7 +572,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 			s.append(" "); s.append("oseq="); s.append(getOriginalSequence());
 			s.append(" "); s.append("ts="); s.append(getTimeStamp());
 			s.append(" "); s.append("ssrc="); s.append(getSSrc());
-			s.append(" "); s.append("<"); s.append(getPayload().capacity()); s.append(" bytes payload>");
+			s.append(" "); s.append("<"); s.append(getLength() - Length); s.append(" bytes payload>");
 
 			return s.toString();
 		}
@@ -582,16 +590,18 @@ public abstract class RaopRtpPacket extends RtpPacket {
 	public static RaopRtpPacket decode(final ChannelBuffer buffer)
 		throws ProtocolException
 	{
-		final RtpPacket rtpPacket = new RtpPacket(buffer, Length);
+		if (buffer.capacity() < Length)
+			throw new InvalidPacketException("Packet had invalid size " + buffer.capacity() + " instead of at least " + Length);
 
-		switch (rtpPacket.getPayloadType()) {
+		final byte type = RtpPacket.getPayloadType(buffer);
+		switch (type) {
 			case TimingRequest.PayloadType: return new TimingRequest(buffer);
 			case TimingResponse.PayloadType: return new TimingResponse(buffer);
 			case Sync.PayloadType: return new Sync(buffer);
 			case RetransmitRequest.PayloadType: return new RetransmitRequest(buffer);
 			case AudioRetransmit.PayloadType: return new AudioRetransmit(buffer);
 			case AudioTransmit.PayloadType: return new AudioTransmit(buffer);
-			default: throw new ProtocolException("Invalid PayloadType " + rtpPacket.getPayloadType());
+			default: throw new ProtocolException("Invalid PayloadType " + type);
 		}
 	}
 

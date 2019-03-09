@@ -75,7 +75,6 @@ public class RaopRtpAudioAlacDecodeHandler extends OneToOneDecoder implements Au
 	 * Decoder state
 	 */
 	private final AlacFile m_alacFile;
-	private byte[] m_alacBytes = new byte[1024];
 
 	/**
 	 * Creates an ALAC decoder instance from a list of format options as
@@ -124,26 +123,23 @@ public class RaopRtpAudioAlacDecodeHandler extends OneToOneDecoder implements Au
 			return msg;
 
 		final RaopRtpPacket.Audio alacPacket = (RaopRtpPacket.Audio)msg;
+		final ChannelBuffer alacPayload = alacPacket.getPayload();
 
 		/* The ALAC decode sometimes reads beyond the input's bounds
 		 * (but later discards the data). To alleviate, we allocate
 		 * 3 spare bytes at input buffer's end.
 		 */
-		final int alacLength = alacPacket.getPayload().capacity();
-		if (m_alacBytes.length < alacLength + 3)
-			m_alacBytes = new byte[alacLength + 3];
-		final byte[] alacBytes = m_alacBytes;
-		alacPacket.getPayload().getBytes(0, alacBytes, 0, alacLength);
 
 		/* Decode ALAC to PCM */
 		final int[] pcmSamples = m_pcmSamples;
-		final int pcmSamplesBytes = AlacDecodeUtils.decode_frame(m_alacFile, alacBytes, pcmSamples, m_samplesPerFrame);
+		final int pcmSamplesBytes = AlacDecodeUtils.decode_frame(m_alacFile, alacPayload.array(), alacPayload.arrayOffset(),
+				pcmSamples, m_samplesPerFrame);
 
 		/* decode_frame() returns the number of *bytes*, not samples! */
 		final int pcmSamplesLength = pcmSamplesBytes / 4;
 		final Level level = Level.FINEST;
 		if (s_logger.isLoggable(level))
-			s_logger.log(level, "Decoded " + alacBytes.length + " bytes of ALAC audio data to " + pcmSamplesLength + " PCM samples");
+			s_logger.log(level, "Decoded " + alacPayload.capacity() + " bytes of ALAC audio data to " + pcmSamplesLength + " PCM samples");
 
 		/* Complain if the sender doesn't honour it's commitment */
 		if (pcmSamplesLength != m_samplesPerFrame)
@@ -166,8 +162,9 @@ public class RaopRtpAudioAlacDecodeHandler extends OneToOneDecoder implements Au
 		else
 			throw new ProtocolException("Packet type " + alacPacket.getClass() + " is not supported by the ALAC decoder");
 
-		final byte[] payload = pcmPacket.getPayload().array();
-		final int offset = pcmPacket.getPayload().arrayOffset();
+		final ChannelBuffer pcmPayload = pcmPacket.getPayload();
+		final byte[] payload = pcmPayload.array();
+		final int offset = pcmPayload.arrayOffset();
 
 		for(int i=0; i < pcmSamples.length; ++i) {
 			/* Convert sample to little endian unsigned integer PCM */

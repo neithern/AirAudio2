@@ -147,6 +147,10 @@ public class RtpPacket {
 		return (byte)(m_buffer.getByte(1) & (0x7f));
 	}
 
+	public static byte getPayloadType(ChannelBuffer buffer) {
+		return (byte)(buffer.getByte(1) & (0x7f));
+	}
+
 	/**
 	 * Sets the packet's payload type
 	 * @param payloadType packet's payload type

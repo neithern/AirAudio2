@@ -593,7 +593,7 @@ public class AlacDecodeUtils
 	}
 
 
-	public static int decode_frame(AlacFile alac, byte[] inbuffer, int[] outbuffer, int outputsize )
+	public static int decode_frame(AlacFile alac, byte[] inbuffer, int inOffset, int[] outbuffer, int outputsize)
 	{
 		int channels ;
 		int outputsamples  = alac.setinfo_max_samples_per_frame;
@@ -601,7 +601,7 @@ public class AlacDecodeUtils
 		/* setup the stream */
 		alac.input_buffer = inbuffer;
 		alac.input_buffer_bitaccumulator = 0;
-		alac.ibIdx = 0;
+		alac.ibIdx = inOffset;
 
 
 		channels = readbits(alac, 3);

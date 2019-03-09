@@ -18,6 +18,7 @@
 package com.github.neithern.airproxy;
 
 import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
+import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelFutureListener;
@@ -50,6 +51,7 @@ import org.phlo.AirReceiver.RaopRtpRetransmitRequestHandler;
 import org.phlo.AirReceiver.RaopRtpTimingHandler;
 import org.phlo.AirReceiver.RaopRtspMethods;
 import org.phlo.AirReceiver.RtpEncodeHandler;
+import org.phlo.AirReceiver.RtpPacket;
 import org.phlo.AirReceiver.Utils;
 
 import java.net.InetSocketAddress;
@@ -579,8 +581,6 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 			public ChannelPipeline getPipeline() throws Exception {
 				final ChannelPipeline pipeline = Channels.pipeline();
 				pipeline.addLast("executionHandler", m_executionHandler);
-				pipeline.addLast("decoder", m_rtpDecoder);
-				pipeline.addLast("encoder", m_rtpEncoder);
 				pipeline.addLast("receiverHandler", new RtpReceiveChannelHandler(channelType));
 				return pipeline;
 			}
@@ -602,23 +602,23 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 
 		@Override
 		public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
-			final Object msg = evt.getMessage();
+			final ChannelBuffer buffer = (ChannelBuffer) evt.getMessage();
 			switch (m_type) {
 				case Audio:
 					for (ProxyRtspClient client : m_rtspClients)
-						client.sendAudioPacket(msg);
+						client.sendAudioPacket(buffer);
 					break;
 				case Control:
 					for (ProxyRtspClient client : m_rtspClients)
-						client.sendControlPacket(msg);
+						client.sendControlPacket(buffer);
 					break;
 				case Timing:
-					if (msg instanceof RaopRtpPacket.TimingResponse) {
+					if (RtpPacket.getPayloadType(buffer) == RaopRtpPacket.TimingResponse.PayloadType) {
 						/* TimingResponse's ReferenceTime is same as TimingRequest's SendTime */
-						long key = ((RaopRtpPacket.TimingResponse) msg).getReferenceTime().getAsLong();
+						long key = RaopRtpPacket.Timing.getReferenceTime(buffer).getAsLong();
 						Channel channel = m_timingChannelMap.remove(key);
 						if (channel != null)
-							channel.write(msg);
+							channel.write(buffer);
 					}
 					break;
 			}
