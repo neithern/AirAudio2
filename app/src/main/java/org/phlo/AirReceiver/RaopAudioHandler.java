@@ -21,7 +21,6 @@ import java.net.*;
 import java.nio.charset.*;
 import java.util.*;
 import java.util.concurrent.Executor;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.*;
 
@@ -641,8 +640,7 @@ public class RaopAudioHandler extends SimpleChannelUpstreamHandler {
 				final AudioOutputQueue audioOutputQueue = m_audioOutputQueue;
 				if (audioOutputQueue != null) {
 					audioOutputQueue.enqueue(audioPacket.getTimeStamp(), audioPacket.getPayload());
-					if (s_logger.isLoggable(Level.FINEST))
-						s_logger.finest("Packet with sequence " + audioPacket.getSequence() + " for playback at " + audioPacket.getTimeStamp() + " submitted to audio output queue");
+					//s_logger.finest("Packet with sequence " + audioPacket.getSequence() + " for playback at " + audioPacket.getTimeStamp() + " submitted to audio output queue");
 				} else {
 					s_logger.warning("No audio queue available, dropping packet");
 				}

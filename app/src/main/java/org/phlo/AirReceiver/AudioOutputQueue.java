@@ -178,13 +178,13 @@ public class AudioOutputQueue implements AudioClock {
 							final ChannelBuffer buffer = m_queue.remove(entryFrameTime);
 							int nextPlaybackSamplesLength = buffer.capacity();
 							if (nextPlaybackSamplesLength % m_bytesPerFrame != 0) {
-								s_logger.severe("Audio data contains non-integral number of frames, ignore last " + (nextPlaybackSamplesLength % m_bytesPerFrame) + " bytes");
+								//s_logger.severe("Audio data contains non-integral number of frames, ignore last " + (nextPlaybackSamplesLength % m_bytesPerFrame) + " bytes");
 
 								nextPlaybackSamplesLength -= nextPlaybackSamplesLength % m_bytesPerFrame;
 							}
 
 							/* Append packet to line */
-							s_logger.finest("Audio data containing " + nextPlaybackSamplesLength / m_bytesPerFrame + " frames for playback time " + entryFrameTime + " found in queue, appending to the output line");
+							//s_logger.finest("Audio data containing " + nextPlaybackSamplesLength / m_bytesPerFrame + " frames for playback time " + entryFrameTime + " found in queue, appending to the output line");
 							appendFrames(buffer.array(), buffer.arrayOffset(), nextPlaybackSamplesLength, entryLineTime);
 							continue;
 						}
@@ -193,7 +193,7 @@ public class AudioOutputQueue implements AudioClock {
 
 							if (!didWarnGap) {
 								didWarnGap = true;
-								s_logger.warning("Audio data missing for frame time " + getNextLineTime() + " (currently " + gapFrames + " frames), writing " + m_packetSizeFrames + " frames of silence");
+								//s_logger.warning("Audio data missing for frame time " + getNextLineTime() + " (currently " + gapFrames + " frames), writing " + m_packetSizeFrames + " frames of silence");
 							}
 						}
 					}
@@ -203,7 +203,7 @@ public class AudioOutputQueue implements AudioClock {
 						if (!lineMuted) {
 							lineMuted = true;
 							setLineGain(MUTE_VOLUME);
-							s_logger.fine("Audio data ended at frame time " + getNextLineTime() + ", writing " + m_packetSizeFrames + " frames of silence and muted line");
+							//s_logger.fine("Audio data ended at frame time " + getNextLineTime() + ", writing " + m_packetSizeFrames + " frames of silence and muted line");
 						}
 					}
 
@@ -335,7 +335,7 @@ public class AudioOutputQueue implements AudioClock {
 			/* Update state */
 			synchronized(AudioOutputQueue.this) {
 				m_lineFramesWritten += bytesWritten / m_bytesPerFrame;
-				s_logger.finest("Audio track end is now at " + getNextLineTime() + " after writing " + len / m_bytesPerFrame + " frames");
+				//s_logger.finest("Audio track end is now at " + getNextLineTime() + " after writing " + len / m_bytesPerFrame + " frames");
 			}
 		}
 	}
