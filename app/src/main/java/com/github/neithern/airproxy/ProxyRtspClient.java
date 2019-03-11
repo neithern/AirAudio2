@@ -59,6 +59,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
 
     private final ProxyServerHandler m_server;
     private final InetSocketAddress m_remoteAddress;
+    private final int m_clientIndex;
     private final int m_rtpPortFirst;
 
     private final ChannelGroup m_channels = new DefaultChannelGroup();
@@ -69,9 +70,10 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     private Channel m_upRtpControlChannel;
     private Channel m_upRtpTimingChannel;
 
-    public ProxyRtspClient(ProxyServerHandler server, InetSocketAddress remoteAddress, int portFirst) {
+    public ProxyRtspClient(ProxyServerHandler server, InetSocketAddress remoteAddress, int clientIndex, int portFirst) {
         m_server = server;
         m_remoteAddress = remoteAddress;
+        m_clientIndex = clientIndex;
         m_rtpPortFirst = portFirst + 1;
 
         final ClientBootstrap bootstrap = new ClientBootstrap(new OioClientSocketChannelFactory(Executors.newSingleThreadExecutor()));
@@ -238,8 +240,12 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             } else if (m_type == RtpChannelType.Timing) {
                 final Channel channel = m_rtpTimingChannel;
                 if (channel != null && RtpPacket.getPayloadType(buffer) == RaopRtpPacket.TimingRequest.PayloadType) {
-                    final long key = RaopRtpPacket.Timing.getRawSendTime(buffer);
-                    m_server.m_timingChannelMap.put(key, channel);
+                    long rawSendTime = RaopRtpPacket.Timing.getRawSendTime(buffer);
+                    // Make unique send time as a key
+                    rawSendTime = ((rawSendTime >>> 3) << 3) | (m_clientIndex & 0x07);
+                    RaopRtpPacket.Timing.setRawSendTime(buffer, rawSendTime);
+                    m_server.m_timingChannelMap.put(rawSendTime, channel);
+                    s_logger.info("time request from: " + Long.toHexString(rawSendTime));
                 }
                 writeMessage(m_upRtpTimingChannel, buffer);
             } else {

@@ -126,10 +126,12 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	}
 
 	private void createRtspClients() {
+		int clientIndex = 0;
 		int portFirst = PROXY_PORT_FIRST;
 		for (InetSocketAddress address : m_rtspServerAddresses) {
-			final ProxyRtspClient client = new ProxyRtspClient(this, address, portFirst);
+			final ProxyRtspClient client = new ProxyRtspClient(this, address, clientIndex, portFirst);
 			m_rtspClients.add(client);
+			clientIndex++;
 			portFirst += 4;
 		}
 	}

@@ -184,6 +184,10 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		public static long getRawSendTime(ChannelBuffer buffer) {
 			return buffer.getLong(RaopRtpPacket.Length + 20);
 		}
+
+		public static void setRawSendTime(ChannelBuffer buffer, long value) {
+			buffer.setLong(RaopRtpPacket.Length + 20, value);
+		}
 	}
 
 	/**
