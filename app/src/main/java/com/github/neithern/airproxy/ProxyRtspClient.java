@@ -22,7 +22,6 @@ import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
-import org.jboss.netty.channel.ChannelHandler;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
@@ -41,10 +40,8 @@ import org.jboss.netty.handler.codec.rtsp.RtspRequestEncoder;
 import org.jboss.netty.handler.codec.rtsp.RtspResponseDecoder;
 import org.jboss.netty.handler.codec.rtsp.RtspResponseStatuses;
 import org.phlo.AirReceiver.ExceptionLoggingHandler;
-import org.phlo.AirReceiver.RaopRtpDecodeHandler;
 import org.phlo.AirReceiver.RaopRtpPacket;
 import org.phlo.AirReceiver.RaopRtspMethods;
-import org.phlo.AirReceiver.RtpEncodeHandler;
 import org.phlo.AirReceiver.RtpPacket;
 import org.phlo.AirReceiver.Utils;
 
@@ -63,8 +60,6 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
     private final ProxyServerHandler m_server;
     private final InetSocketAddress m_remoteAddress;
     private final int m_rtpPortFirst;
-    private final ChannelHandler m_rtpDecoder = new RaopRtpDecodeHandler();
-    private final ChannelHandler m_rtpEncoder = new RtpEncodeHandler();
 
     private final ChannelGroup m_channels = new DefaultChannelGroup();
     private Channel m_rtspChannel;

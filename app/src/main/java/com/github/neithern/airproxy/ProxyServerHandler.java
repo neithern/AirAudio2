@@ -22,7 +22,6 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelFutureListener;
-import org.jboss.netty.channel.ChannelHandler;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
@@ -45,12 +44,10 @@ import org.phlo.AirReceiver.AudioOutputQueue;
 import org.phlo.AirReceiver.ProtocolException;
 import org.phlo.AirReceiver.RaopRtpAudioAlacDecodeHandler;
 import org.phlo.AirReceiver.RaopRtpAudioDecryptionHandler;
-import org.phlo.AirReceiver.RaopRtpDecodeHandler;
 import org.phlo.AirReceiver.RaopRtpPacket;
 import org.phlo.AirReceiver.RaopRtpRetransmitRequestHandler;
 import org.phlo.AirReceiver.RaopRtpTimingHandler;
 import org.phlo.AirReceiver.RaopRtspMethods;
-import org.phlo.AirReceiver.RtpEncodeHandler;
 import org.phlo.AirReceiver.RtpPacket;
 import org.phlo.AirReceiver.Utils;
 
@@ -92,9 +89,6 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	protected final Executor m_executor;
 	protected final ExecutionHandler m_executionHandler;
 	protected final ConcurrentHashMap<Long, Channel> m_timingChannelMap = new ConcurrentHashMap<>();
-
-	private final ChannelHandler m_rtpDecoder = new RaopRtpDecodeHandler();
-	private final ChannelHandler m_rtpEncoder = new RtpEncodeHandler();
 
 	private final InetSocketAddress[] m_rtspServerAddresses;
 
@@ -573,9 +567,9 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 	 * @return open data-gram channel
 	 */
 	private Channel createRtpChannel(final InetSocketAddress local, final InetSocketAddress remote, final RtpChannelType channelType) {
-		final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_executionHandler.getExecutor()));
+		final ConnectionlessBootstrap bootstrap = new ConnectionlessBootstrap(new OioDatagramChannelFactory(m_executor));
 		bootstrap.setOption("receiveBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(1500));
-		bootstrap.setOption("receiveBufferSize", 1024*1024);
+		bootstrap.setOption("receiveBufferSize", 1048576);
 		bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
 			@Override
 			public ChannelPipeline getPipeline() throws Exception {
