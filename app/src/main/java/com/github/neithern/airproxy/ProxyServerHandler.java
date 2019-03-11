@@ -609,7 +609,7 @@ public class ProxyServerHandler extends SimpleChannelUpstreamHandler {
 				case Timing:
 					if (RtpPacket.getPayloadType(buffer) == RaopRtpPacket.TimingResponse.PayloadType) {
 						/* TimingResponse's ReferenceTime is same as TimingRequest's SendTime */
-						long key = RaopRtpPacket.Timing.getReferenceTime(buffer).getAsLong();
+						long key = RaopRtpPacket.Timing.getRawReferenceTime(buffer);
 						Channel channel = m_timingChannelMap.remove(key);
 						if (channel != null)
 							channel.write(buffer);

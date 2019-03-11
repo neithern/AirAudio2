@@ -88,30 +88,28 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		public static final int Length = 8;
 
 		private final ChannelBuffer m_buffer;
+		private final int m_offset;
 
-		protected NtpTime(final ChannelBuffer buffer) {
-			assert buffer.capacity() == Length;
+		protected NtpTime(final ChannelBuffer buffer, int offset) {
+			assert buffer.capacity() >= offset + Length;
 			m_buffer = buffer;
-		}
-
-		public long getAsLong() {
-			return m_buffer.getLong(0);
+			m_offset = offset;
 		}
 
 		public long getSeconds() {
-			return getBeUInt(m_buffer, 0);
+			return getBeUInt(m_buffer, m_offset);
 		}
 
 		public void setSeconds(final long seconds) {
-			setBeUInt(m_buffer, 0, seconds);
+			setBeUInt(m_buffer, m_offset, seconds);
 		}
 
 		public long getFraction() {
-			return getBeUInt(m_buffer, 4);
+			return getBeUInt(m_buffer, m_offset + 4);
 		}
 
 		public void setFraction(final long fraction) {
-			setBeUInt(m_buffer, 4, fraction);
+			setBeUInt(m_buffer, m_offset + 4, fraction);
 		}
 
 		public double getDouble() {
@@ -146,11 +144,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return
 		 */
 		public NtpTime getReferenceTime() {
-			return new NtpTime(getBuffer().slice(RaopRtpPacket.Length + 4, 8));
-		}
-
-		public static NtpTime getReferenceTime(ChannelBuffer buffer) {
-			return new NtpTime(buffer.slice(RaopRtpPacket.Length + 4, 8));
+			return new NtpTime(m_buffer, RaopRtpPacket.Length + 4);
 		}
 
 		/**
@@ -159,7 +153,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return
 		 */
 		public NtpTime getReceivedTime() {
-			return new NtpTime(getBuffer().slice(RaopRtpPacket.Length + 12, 8));
+			return new NtpTime(m_buffer, RaopRtpPacket.Length + 12);
 		}
 
 		/**
@@ -168,11 +162,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return
 		 */
 		public NtpTime getSendTime() {
-			return new NtpTime(getBuffer().slice(RaopRtpPacket.Length + 20, 8));
-		}
-
-		public static NtpTime getSendTime(ChannelBuffer buffer) {
-			return new NtpTime(buffer.slice(RaopRtpPacket.Length + 20, 8));
+			return new NtpTime(m_buffer, RaopRtpPacket.Length + 20);
 		}
 
 		@Override
@@ -185,6 +175,14 @@ public abstract class RaopRtpPacket extends RtpPacket {
 			s.append(" "); s.append("send="); s.append(getSendTime().getDouble());
 
 			return s.toString();
+		}
+
+		public static long getRawReferenceTime(ChannelBuffer buffer) {
+			return buffer.getLong(RaopRtpPacket.Length + 4);
+		}
+
+		public static long getRawSendTime(ChannelBuffer buffer) {
+			return buffer.getLong(RaopRtpPacket.Length + 20);
 		}
 	}
 
@@ -260,7 +258,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return the source's RTP time corresponding to {@link #getTime()} minus the latency
 		 */
 		public long getTimeStampMinusLatency() {
-			return getBeUInt(getBuffer(), RaopRtpPacket.Length);
+			return getBeUInt(m_buffer, RaopRtpPacket.Length);
 		}
 
 		/**
@@ -270,7 +268,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return the source's RTP time corresponding to {@link #getTime()} minus the latency
 		 */
 		public void setTimeStampMinusLatency(final long value) {
-			setBeUInt(getBuffer(), RaopRtpPacket.Length, value);
+			setBeUInt(m_buffer, RaopRtpPacket.Length, value);
 		}
 
 		/**
@@ -278,7 +276,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return the source's NTP time corresponding to the RTP time returned by {@link #getTimeStamp()}
 		 */
 		public NtpTime getTime() {
-			return new NtpTime(getBuffer().slice(RaopRtpPacket.Length + 4, 8));
+			return new NtpTime(m_buffer, RaopRtpPacket.Length + 4);
 		}
 
 		/**
@@ -288,7 +286,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return the source's RTP time corresponding to {@link #getTime()}
 		 */
 		public long getTimeStamp() {
-			return getBeUInt(getBuffer(), RaopRtpPacket.Length + 4 + 8);
+			return getBeUInt(m_buffer, RaopRtpPacket.Length + 4 + 8);
 		}
 
 		/**
@@ -298,7 +296,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @param value the source's RTP time corresponding to {@link #getTime()}
 		 */
 		public void setTimeStamp(final long value) {
-			setBeUInt(getBuffer(), RaopRtpPacket.Length + 4 + 8, value);
+			setBeUInt(m_buffer, RaopRtpPacket.Length + 4 + 8, value);
 		}
 
 		@Override
@@ -347,7 +345,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return sequence number
 		 */
 		public int getSequenceFirst() {
-			return getBeUInt16(getBuffer(), RaopRtpPacket.Length);
+			return getBeUInt16(m_buffer, RaopRtpPacket.Length);
 		}
 
 		/**
@@ -355,7 +353,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @param value sequence number
 		 */
 		public void setSequenceFirst(final int value) {
-			setBeUInt16(getBuffer(), RaopRtpPacket.Length, value);
+			setBeUInt16(m_buffer, RaopRtpPacket.Length, value);
 		}
 
 		/**
@@ -363,7 +361,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @return number of missing packets
 		 */
 		public int getSequenceCount() {
-			return getBeUInt16(getBuffer(), RaopRtpPacket.Length + 2);
+			return getBeUInt16(m_buffer, RaopRtpPacket.Length + 2);
 		}
 
 		/**
@@ -371,7 +369,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * @param value number of missing packets
 		 */
 		public void setSequenceCount(final int value) {
-			setBeUInt16(getBuffer(), RaopRtpPacket.Length + 2, value);
+			setBeUInt16(m_buffer, RaopRtpPacket.Length + 2, value);
 		}
 
 		@Override
@@ -449,27 +447,27 @@ public abstract class RaopRtpPacket extends RtpPacket {
 
 		@Override
 		public long getTimeStamp() {
-			return getBeUInt(getBuffer(), RaopRtpPacket.Length);
+			return getBeUInt(m_buffer, RaopRtpPacket.Length);
 		}
 
 		@Override
 		public void setTimeStamp(final long timeStamp) {
-			setBeUInt(getBuffer(), RaopRtpPacket.Length, timeStamp);
+			setBeUInt(m_buffer, RaopRtpPacket.Length, timeStamp);
 		}
 
 		@Override
 		public long getSSrc() {
-			return getBeUInt(getBuffer(), RaopRtpPacket.Length + 4);
+			return getBeUInt(m_buffer, RaopRtpPacket.Length + 4);
 		}
 
 		@Override
 		public void setSSrc(final long sSrc) {
-			setBeUInt(getBuffer(), RaopRtpPacket.Length + 4, sSrc);
+			setBeUInt(m_buffer, RaopRtpPacket.Length + 4, sSrc);
 		}
 
 		@Override
 		public ChannelBuffer getPayload() {
-			return getBuffer().slice(Length, getLength() - Length);
+			return m_buffer.slice(Length, getLength() - Length);
 		}
 
 		@Override
@@ -510,14 +508,14 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * First two bytes after RTP header
 		 */
 		public int getUnknown2Bytes() {
-			return getBeUInt16(getBuffer(), RaopRtpPacket.Length);
+			return getBeUInt16(m_buffer, RaopRtpPacket.Length);
 		}
 
 		/**
 		 * First two bytes after RTP header
 		 */
 		public void setUnknown2Bytes(final int b) {
-			setBeUInt16(getBuffer(), RaopRtpPacket.Length, b);
+			setBeUInt16(m_buffer, RaopRtpPacket.Length, b);
 		}
 
 		/**
@@ -526,7 +524,7 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * retransmitted).
 		 */
 		public int getOriginalSequence() {
-			return getBeUInt16(getBuffer(), RaopRtpPacket.Length + 2);
+			return getBeUInt16(m_buffer, RaopRtpPacket.Length + 2);
 		}
 
 		/**
@@ -535,32 +533,32 @@ public abstract class RaopRtpPacket extends RtpPacket {
 		 * retransmitted).
 		 */
 		public void setOriginalSequence(final int seq) {
-			setBeUInt16(getBuffer(), RaopRtpPacket.Length + 2, seq);
+			setBeUInt16(m_buffer, RaopRtpPacket.Length + 2, seq);
 		}
 
 		@Override
 		public long getTimeStamp() {
-			return getBeUInt(getBuffer(), RaopRtpPacket.Length + 4);
+			return getBeUInt(m_buffer, RaopRtpPacket.Length + 4);
 		}
 
 		@Override
 		public void setTimeStamp(final long timeStamp) {
-			setBeUInt(getBuffer(), RaopRtpPacket.Length + 4, timeStamp);
+			setBeUInt(m_buffer, RaopRtpPacket.Length + 4, timeStamp);
 		}
 
 		@Override
 		public long getSSrc() {
-			return getBeUInt(getBuffer(), RaopRtpPacket.Length + 4 + 4);
+			return getBeUInt(m_buffer, RaopRtpPacket.Length + 4 + 4);
 		}
 
 		@Override
 		public void setSSrc(final long sSrc) {
-			setBeUInt(getBuffer(), RaopRtpPacket.Length + 4 + 4, sSrc);
+			setBeUInt(m_buffer, RaopRtpPacket.Length + 4 + 4, sSrc);
 		}
 
 		@Override
 		public ChannelBuffer getPayload() {
-			return getBuffer().slice(Length, getLength() - Length);
+			return m_buffer.slice(Length, getLength() - Length);
 		}
 
 		@Override

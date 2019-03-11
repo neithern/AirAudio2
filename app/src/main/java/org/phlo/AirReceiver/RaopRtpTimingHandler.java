@@ -53,7 +53,7 @@ public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 				timingRequestPacket.getReceivedTime().setDouble(0); /* Set by the source */
 				timingRequestPacket.getReferenceTime().setDouble(0); /* Set by the source */
 				timingRequestPacket.getSendTime().setDouble(m_audioClock.getNowSecondsTime());
-				//s_logger.info("send request: " + timingRequestPacket.getSendTime().getAsLong());
+				//s_logger.info("send request: " + timingRequestPacket.getSendTime().getDouble());
 
 				m_channel.write(timingRequestPacket);
 				try {
@@ -142,15 +142,15 @@ public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 	private synchronized void timingResponseReceived(final RaopRtpPacket.TimingResponse timingResponsePacket) {
 		final double localReceiveSecondsTime = m_audioClock.getNowSecondsTime();
 
+		final double referenceTime = timingResponsePacket.getReferenceTime().getDouble();
+		final double receivedTime = timingResponsePacket.getReceivedTime().getDouble();
+		final double sendTime = timingResponsePacket.getSendTime().getDouble();
+
 		/* Compute remove seconds offset, assuming that the transmission times of
 		 * the timing requests and the timing response are equal
 		 */
-		final double localSecondsTime =
-			localReceiveSecondsTime * 0.5 +
-			timingResponsePacket.getReferenceTime().getDouble() * 0.5;
-		final double remoteSecondsTime =
-			timingResponsePacket.getReceivedTime().getDouble() * 0.5 +
-			timingResponsePacket.getSendTime().getDouble() * 0.5;
+		final double localSecondsTime = (localReceiveSecondsTime + referenceTime) * 0.5;
+		final double remoteSecondsTime = (receivedTime + sendTime) * 0.5;
 		final double remoteSecondsOffset = remoteSecondsTime - localSecondsTime;
 
 		/*
@@ -166,12 +166,8 @@ public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 		 * 1e-3, and starts to decrease rapidly for transmission times significantly
 		 * larger than 1ms.
 		 */
-		final double localInterval =
-			localReceiveSecondsTime -
-			timingResponsePacket.getReferenceTime().getDouble();
-		final double remoteInterval =
-			timingResponsePacket.getSendTime().getDouble() -
-			timingResponsePacket.getReceivedTime().getDouble();
+		final double localInterval = localReceiveSecondsTime - referenceTime;
+		final double remoteInterval = sendTime - receivedTime;
 		final double transmissionTime = Math.max(localInterval - remoteInterval, 0);
 		final double weight = 1e-6 / (transmissionTime + 1e-3);
 
@@ -181,7 +177,7 @@ public class RaopRtpTimingHandler extends SimpleChannelUpstreamHandler {
 		//final double secondsTimeAdjustment = m_remoteSecondsOffset.get() - remoteSecondsOffsetPrevious;
 		//s_logger.finest("Timing response weight " + weight + " offset " + remoteSecondsOffset + " the averaged offset " + secondsTimeAdjustment + " the new averaged offset " + m_remoteSecondsOffset.get());
 
-		//s_logger.info("receive response: " + timingResponsePacket.getReferenceTime().getAsLong() + ", reference " + timingResponsePacket.getSendTime().getDouble() + ", received " + timingResponsePacket.getReceivedTime().getDouble());
+		//s_logger.info("receive response: " + referenceTime + ", reference " + sendTime + ", received " + receivedTime);
 	}
 
 	private synchronized void syncReceived(final RaopRtpPacket.Sync syncPacket) {

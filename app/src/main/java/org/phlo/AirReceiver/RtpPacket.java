@@ -25,7 +25,7 @@ import org.jboss.netty.buffer.*;
 public class RtpPacket {
 	public static final int Length = 4;
 
-	final private ChannelBuffer m_buffer;
+	protected final ChannelBuffer m_buffer;
 
 	protected RtpPacket(final int size) {
 		assert size >= Length;
@@ -125,7 +125,7 @@ public class RtpPacket {
 
 	/**
 	 * Sets the RTP marker flag
-	 * @param marker RTP marker flag
+	 * @return RTP marker flag
 	 */
 	public boolean getMarker() {
 		return (m_buffer.getByte(1) & (0x80)) != 0;
@@ -173,7 +173,7 @@ public class RtpPacket {
 
 	/**
 	 * Sets the packet's sequence number
-	 * @param value packet's sequence number
+	 * @param sequence packet's sequence number
 	 */
 	public void setSequence(final int sequence) {
 		assert (sequence & ~0xffff) == 0;

@@ -238,7 +238,7 @@ public class ProxyRtspClient implements ChannelPipelineFactory {
             } else if (m_type == RtpChannelType.Timing) {
                 final Channel channel = m_rtpTimingChannel;
                 if (channel != null && RtpPacket.getPayloadType(buffer) == RaopRtpPacket.TimingRequest.PayloadType) {
-                    final long key = RaopRtpPacket.Timing.getSendTime(buffer).getAsLong();
+                    final long key = RaopRtpPacket.Timing.getRawSendTime(buffer);
                     m_server.m_timingChannelMap.put(key, channel);
                 }
                 writeMessage(m_upRtpTimingChannel, buffer);
